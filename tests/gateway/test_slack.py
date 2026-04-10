@@ -1763,7 +1763,7 @@ class TestMultiWorkspaceRouting:
             result = await adapter.send("C999", "hello")
 
         assert result.success is True
-        secondary_client.chat_postMessage.assert_called_once_with(channel="C999", text="hello")
+        secondary_client.chat_postMessage.assert_called_once_with(channel="C999", text="hello", mrkdwn=True)
         primary_client.chat_postMessage.assert_not_called()
 
     @pytest.mark.asyncio
