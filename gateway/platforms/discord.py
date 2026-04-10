@@ -529,10 +529,17 @@ class DiscordAdapter(BasePlatformAdapter):
             intents.members = any(not entry.isdigit() for entry in self._allowed_user_ids)
             intents.voice_states = True
 
-            # Create bot
+            # Resolve proxy (DISCORD_PROXY > generic env vars > macOS system proxy)
+            from gateway.platforms.base import resolve_proxy_url, proxy_kwargs_for_bot
+            proxy_url = resolve_proxy_url(platform_env_var="DISCORD_PROXY")
+            if proxy_url:
+                logger.info("[%s] Using proxy for Discord: %s", self.name, proxy_url)
+
+            # Create bot — proxy= for HTTP, connector= for SOCKS
             self._client = commands.Bot(
                 command_prefix="!",  # Not really used, we handle raw messages
                 intents=intents,
+                **proxy_kwargs_for_bot(proxy_url),
             )
             adapter_self = self  # capture for closure
 
@@ -1307,8 +1314,11 @@ class DiscordAdapter(BasePlatformAdapter):
 
             # Download the image and send as a Discord file attachment
             # (Discord renders attachments inline, unlike plain URLs)
-            async with aiohttp.ClientSession() as session:
-                async with session.get(image_url, timeout=aiohttp.ClientTimeout(total=30)) as resp:
+            from gateway.platforms.base import resolve_proxy_url, proxy_kwargs_for_aiohttp
+            _proxy = resolve_proxy_url(platform_env_var="DISCORD_PROXY")
+            _sess_kw, _req_kw = proxy_kwargs_for_aiohttp(_proxy)
+            async with aiohttp.ClientSession(**_sess_kw) as session:
+                async with session.get(image_url, timeout=aiohttp.ClientTimeout(total=30), **_req_kw) as resp:
                     if resp.status != 200:
                         raise Exception(f"Failed to download image: HTTP {resp.status}")
 
@@ -1585,7 +1595,7 @@ class DiscordAdapter(BasePlatformAdapter):
             await self._run_simple_slash(interaction, f"/model {name}".strip())
 
         @tree.command(name="reasoning", description="Show or change reasoning effort")
-        @discord.app_commands.describe(effort="Reasoning effort: xhigh, high, medium, low, minimal, or none.")
+        @discord.app_commands.describe(effort="Reasoning effort: none, minimal, low, medium, high, or xhigh.")
         async def slash_reasoning(interaction: discord.Interaction, effort: str = ""):
             await self._run_simple_slash(interaction, f"/reasoning {effort}".strip())
 
@@ -2382,7 +2392,7 @@ class DiscordAdapter(BasePlatformAdapter):
                         ext or "unknown", content_type,
                     )
                 else:
-                    MAX_DOC_BYTES = 20 * 1024 * 1024
+                    MAX_DOC_BYTES = 32 * 1024 * 1024
                     if att.size and att.size > MAX_DOC_BYTES:
                         logger.warning(
                             "[Discord] Document too large (%s bytes), skipping: %s",
@@ -2391,10 +2401,14 @@ class DiscordAdapter(BasePlatformAdapter):
                     else:
                         try:
                             import aiohttp
-                            async with aiohttp.ClientSession() as session:
+                            from gateway.platforms.base import resolve_proxy_url, proxy_kwargs_for_aiohttp
+                            _proxy = resolve_proxy_url(platform_env_var="DISCORD_PROXY")
+                            _sess_kw, _req_kw = proxy_kwargs_for_aiohttp(_proxy)
+                            async with aiohttp.ClientSession(**_sess_kw) as session:
                                 async with session.get(
                                     att.url,
                                     timeout=aiohttp.ClientTimeout(total=30),
+                                    **_req_kw,
                                 ) as resp:
                                     if resp.status != 200:
                                         raise Exception(f"HTTP {resp.status}")
@@ -2406,9 +2420,9 @@ class DiscordAdapter(BasePlatformAdapter):
                             media_urls.append(cached_path)
                             media_types.append(doc_mime)
                             logger.info("[Discord] Cached user document: %s", cached_path)
-                            # Inject text content for .txt/.md files (capped at 100 KB)
+                            # Inject text content for plain-text documents (capped at 100 KB)
                             MAX_TEXT_INJECT_BYTES = 100 * 1024
-                            if ext in (".md", ".txt") and len(raw_bytes) <= MAX_TEXT_INJECT_BYTES:
+                            if ext in (".md", ".txt", ".log") and len(raw_bytes) <= MAX_TEXT_INJECT_BYTES:
                                 try:
                                     text_content = raw_bytes.decode("utf-8")
                                     display_name = att.filename or f"document{ext}"

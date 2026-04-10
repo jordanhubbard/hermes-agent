@@ -925,8 +925,8 @@ class GatewayRunner:
     def _load_reasoning_config() -> dict | None:
         """Load reasoning effort from config.yaml.
 
-        Reads agent.reasoning_effort from config.yaml. Valid: "xhigh",
-        "high", "medium", "low", "minimal", "none". Returns None to use
+        Reads agent.reasoning_effort from config.yaml. Valid: "none",
+        "minimal", "low", "medium", "high", "xhigh". Returns None to use
         default (medium).
         """
         from hermes_constants import parse_reasoning_effort
@@ -4840,7 +4840,7 @@ class GatewayRunner:
 
         Usage:
             /reasoning              Show current effort level and display state
-            /reasoning <level>      Set reasoning effort (none, low, medium, high, xhigh)
+            /reasoning <level>      Set reasoning effort (none, minimal, low, medium, high, xhigh)
             /reasoning show|on      Show model reasoning in responses
             /reasoning hide|off     Hide model reasoning from responses
         """
@@ -4885,7 +4885,7 @@ class GatewayRunner:
                 "🧠 **Reasoning Settings**\n\n"
                 f"**Effort:** `{level}`\n"
                 f"**Display:** {display_state}\n\n"
-                "_Usage:_ `/reasoning <none|low|medium|high|xhigh|show|hide>`"
+                "_Usage:_ `/reasoning <none|minimal|low|medium|high|xhigh|show|hide>`"
             )
 
         # Display toggle
@@ -4903,12 +4903,12 @@ class GatewayRunner:
         effort = args.strip()
         if effort == "none":
             parsed = {"enabled": False}
-        elif effort in ("xhigh", "high", "medium", "low", "minimal"):
+        elif effort in ("minimal", "low", "medium", "high", "xhigh"):
             parsed = {"enabled": True, "effort": effort}
         else:
             return (
                 f"⚠️ Unknown argument: `{effort}`\n\n"
-                "**Valid levels:** none, low, minimal, medium, high, xhigh\n"
+                "**Valid levels:** none, minimal, low, medium, high, xhigh\n"
                 "**Display:** show, hide"
             )
 
@@ -5280,19 +5280,28 @@ class GatewayRunner:
 
         agent = self._running_agents.get(session_key)
         if agent and hasattr(agent, "session_total_tokens") and agent.session_api_calls > 0:
-            lines = [
-                "📊 **Session Token Usage**",
-                f"Prompt (input): {agent.session_prompt_tokens:,}",
-                f"Completion (output): {agent.session_completion_tokens:,}",
-                f"Total: {agent.session_total_tokens:,}",
-                f"API calls: {agent.session_api_calls}",
-            ]
+            lines = []
+
+            # Rate limits first (when available from provider headers)
+            rl_state = agent.get_rate_limit_state()
+            if rl_state and rl_state.has_data:
+                from agent.rate_limit_tracker import format_rate_limit_compact
+                lines.append(f"⏱️ **Rate Limits:** {format_rate_limit_compact(rl_state)}")
+                lines.append("")
+
+            # Session token usage
+            lines.append("📊 **Session Token Usage**")
+            lines.append(f"Prompt (input): {agent.session_prompt_tokens:,}")
+            lines.append(f"Completion (output): {agent.session_completion_tokens:,}")
+            lines.append(f"Total: {agent.session_total_tokens:,}")
+            lines.append(f"API calls: {agent.session_api_calls}")
             ctx = agent.context_compressor
             if ctx.last_prompt_tokens:
                 pct = min(100, ctx.last_prompt_tokens / ctx.context_length * 100) if ctx.context_length else 0
                 lines.append(f"Context: {ctx.last_prompt_tokens:,} / {ctx.context_length:,} ({pct:.0f}%)")
             if ctx.compression_count:
                 lines.append(f"Compressions: {ctx.compression_count}")
+
             return "\n".join(lines)
 
         # No running agent -- check session history for a rough count

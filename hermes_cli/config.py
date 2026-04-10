@@ -197,14 +197,44 @@ def _ensure_default_soul_md(home: Path) -> None:
 
 
 def ensure_hermes_home():
-    """Ensure ~/.hermes directory structure exists with secure permissions."""
+    """Ensure ~/.hermes directory structure exists with secure permissions.
+
+    In managed mode (NixOS), dirs are created by the activation script with
+    setgid + group-writable (2770). We skip mkdir and set umask(0o007) so
+    any files created (e.g. SOUL.md) are group-writable (0660).
+    """
     home = get_hermes_home()
-    home.mkdir(parents=True, exist_ok=True)
-    _secure_dir(home)
+    if is_managed():
+        old_umask = os.umask(0o007)
+        try:
+            _ensure_hermes_home_managed(home)
+        finally:
+            os.umask(old_umask)
+    else:
+        home.mkdir(parents=True, exist_ok=True)
+        _secure_dir(home)
+        for subdir in ("cron", "sessions", "logs", "memories"):
+            d = home / subdir
+            d.mkdir(parents=True, exist_ok=True)
+            _secure_dir(d)
+        _ensure_default_soul_md(home)
+
+
+def _ensure_hermes_home_managed(home: Path):
+    """Managed-mode variant: verify dirs exist (activation creates them), seed SOUL.md."""
+    if not home.is_dir():
+        raise RuntimeError(
+            f"HERMES_HOME {home} does not exist. "
+            "Run 'sudo nixos-rebuild switch' first."
+        )
     for subdir in ("cron", "sessions", "logs", "memories"):
         d = home / subdir
-        d.mkdir(parents=True, exist_ok=True)
-        _secure_dir(d)
+        if not d.is_dir():
+            raise RuntimeError(
+                f"{d} does not exist. "
+                "Run 'sudo nixos-rebuild switch' first."
+            )
+    # Inside umask(0o007) scope — SOUL.md will be created as 0660
     _ensure_default_soul_md(home)
 
 
@@ -569,7 +599,7 @@ DEFAULT_CONFIG = {
     },
 
     # Config schema version - bump this when adding new required fields
-    "_config_version": 12,
+    "_config_version": 13,
 }
 
 # =============================================================================
@@ -1125,6 +1155,27 @@ OPTIONAL_ENV_VARS = {
         "category": "messaging",
         "advanced": True,
     },
+    "BLUEBUBBLES_SERVER_URL": {
+        "description": "BlueBubbles server URL for iMessage integration (e.g. http://192.168.1.10:1234)",
+        "prompt": "BlueBubbles server URL",
+        "url": "https://bluebubbles.app/",
+        "password": False,
+        "category": "messaging",
+    },
+    "BLUEBUBBLES_PASSWORD": {
+        "description": "BlueBubbles server password (from BlueBubbles Server → Settings → API)",
+        "prompt": "BlueBubbles server password",
+        "url": None,
+        "password": True,
+        "category": "messaging",
+    },
+    "BLUEBUBBLES_ALLOWED_USERS": {
+        "description": "Comma-separated iMessage addresses (email or phone) allowed to use the bot",
+        "prompt": "Allowed iMessage addresses (comma-separated)",
+        "url": None,
+        "password": False,
+        "category": "messaging",
+    },
     "GATEWAY_ALLOW_ALL_USERS": {
         "description": "Allow all users to interact with messaging bots (true/false). Default: false.",
         "prompt": "Allow all users (true/false)",
@@ -1165,6 +1216,14 @@ OPTIONAL_ENV_VARS = {
         "category": "messaging",
         "advanced": True,
     },
+    "API_SERVER_MODEL_NAME": {
+        "description": "Model name advertised on /v1/models. Defaults to the profile name (or 'hermes-agent' for the default profile). Useful for multi-user setups with OpenWebUI.",
+        "prompt": "API server model name",
+        "url": None,
+        "password": False,
+        "category": "messaging",
+        "advanced": True,
+    },
     "WEBHOOK_ENABLED": {
         "description": "Enable the webhook platform adapter for receiving events from GitHub, GitLab, etc.",
         "prompt": "Enable webhooks (true/false)",
@@ -1196,7 +1255,7 @@ OPTIONAL_ENV_VARS = {
         "category": "setting",
     },
     "SUDO_PASSWORD": {
-        "description": "Sudo password for terminal commands requiring root access",
+        "description": "Sudo password for terminal commands requiring root access; set to an explicit empty string to try empty without prompting",
         "prompt": "Sudo password",
         "url": None,
         "password": True,
@@ -1679,6 +1738,21 @@ def migrate_config(interactive: bool = True, quiet: bool = False) -> Dict[str, A
                     for key in list(providers_dict.keys())[-migrated_count:]:
                         ep = providers_dict[key]
                         print(f"    → {key}: {ep.get('api', '')}")
+
+    # ── Version 12 → 13: clear dead LLM_MODEL / OPENAI_MODEL from .env ──
+    # These env vars were written by the old setup wizard but nothing reads
+    # them anymore (config.yaml is the sole source of truth since March 2026).
+    # Stale entries cause user confusion — see issue report.
+    if current_ver < 13:
+        for dead_var in ("LLM_MODEL", "OPENAI_MODEL"):
+            try:
+                old_val = get_env_value(dead_var)
+                if old_val:
+                    save_env_value(dead_var, "")
+                    if not quiet:
+                        print(f"  ✓ Cleared {dead_var} from .env (no longer used — config.yaml is source of truth)")
+            except Exception:
+                pass
 
     if current_ver < latest_ver and not quiet:
         print(f"Config version: {current_ver} → {latest_ver}")
