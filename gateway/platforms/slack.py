@@ -94,6 +94,7 @@ class SlackAdapter(BasePlatformAdapter):
         # Multi-workspace sending support (existing)
         self._team_clients: Dict[str, AsyncWebClient] = {}   # team_id → WebClient
         self._team_bot_user_ids: Dict[str, str] = {}          # team_id → bot_user_id
+        self._team_user_tokens: Dict[str, str] = {}           # team_id → user_token (xoxp-)
         self._channel_team: Dict[str, str] = {}                # channel_id → team_id
         # Dedup cache: prevents duplicate bot responses when Socket Mode
         # reconnects redeliver events.
@@ -174,11 +175,12 @@ class SlackAdapter(BasePlatformAdapter):
         return self._channel_team.get(chat_id, "")
 
     def _load_accounts(self) -> list:
-        """Load Slack account configs: list of {name, bot_token, app_token}.
+        """Load Slack account configs: list of {name, bot_token, app_token, user_token?}.
 
         Sources (in priority order):
         1. ~/.hermes/slack_accounts.json — multi-workspace accounts, each with
            its own bot_token + app_token pair for independent Socket Mode.
+           Optional: user_token (xoxp-) for user-level API calls.
         2. Fallback: SLACK_BOT_TOKEN (+ comma-sep + slack_tokens.json) paired
            with single SLACK_APP_TOKEN from env — backward-compatible single
            workspace (or multi-bot-token with shared app_token).
@@ -195,11 +197,16 @@ class SlackAdapter(BasePlatformAdapter):
                         bot_token = entry.get("bot_token", "")
                         app_token = entry.get("app_token", "")
                         if bot_token and app_token:
-                            accounts.append({
+                            acct = {
                                 "name": name,
                                 "bot_token": bot_token,
                                 "app_token": app_token,
-                            })
+                            }
+                            # Pass through optional per-workspace fields
+                            user_token = entry.get("user_token", "")
+                            if user_token:
+                                acct["user_token"] = user_token
+                            accounts.append(acct)
                         else:
                             logger.warning(
                                 "[Slack] Account %s missing bot_token or app_token, skipping",
@@ -356,6 +363,15 @@ class SlackAdapter(BasePlatformAdapter):
 
                 self._team_clients[team_id] = client
                 self._team_bot_user_ids[team_id] = bot_user_id
+
+                # Store per-workspace user token if provided
+                user_token = account.get("user_token", "")
+                if user_token:
+                    self._team_user_tokens[team_id] = user_token
+                    logger.info(
+                        "[Slack] Account '%s': user_token available for workspace %s",
+                        acct_name, team_name,
+                    )
 
                 # First account sets the primary bot_user_id (backward compat)
                 if self._bot_user_id is None:

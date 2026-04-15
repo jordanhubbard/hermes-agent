@@ -770,3 +770,913 @@ class TestSignalStopTyping:
         await adapter.stop_typing("+155****4567")
 
         adapter._stop_typing_indicator.assert_awaited_once_with("+155****4567")
+
+
+# ---------------------------------------------------------------------------
+# _handle_envelope() — Inbound Message Processing
+# ---------------------------------------------------------------------------
+
+class TestSignalHandleEnvelope:
+    """Test _handle_envelope inbound message pipeline."""
+
+    @pytest.mark.asyncio
+    async def test_handle_envelope_dm_message(self, monkeypatch):
+        adapter = _make_signal_adapter(monkeypatch)
+        adapter.handle_message = AsyncMock()
+
+        envelope = {
+            "envelope": {
+                "sourceNumber": "+15559999999",
+                "sourceName": "Alice",
+                "sourceUuid": "uuid-alice",
+                "timestamp": 1712345678000,
+                "dataMessage": {"message": "Hello", "attachments": []},
+            }
+        }
+        await adapter._handle_envelope(envelope)
+
+        adapter.handle_message.assert_awaited_once()
+        event = adapter.handle_message.call_args[0][0]
+        assert event.source.chat_id == "+15559999999"
+        assert event.source.chat_type == "dm"
+        assert event.text == "Hello"
+
+    @pytest.mark.asyncio
+    async def test_handle_envelope_group_message(self, monkeypatch):
+        adapter = _make_signal_adapter(monkeypatch, group_allowed="groupABC==")
+        adapter.handle_message = AsyncMock()
+
+        envelope = {
+            "envelope": {
+                "sourceNumber": "+15559999999",
+                "sourceName": "Alice",
+                "sourceUuid": "uuid-alice",
+                "timestamp": 1712345678000,
+                "dataMessage": {
+                    "message": "Hello group",
+                    "groupInfo": {"groupId": "groupABC==", "groupName": "Test Group"},
+                    "attachments": [],
+                },
+            }
+        }
+        await adapter._handle_envelope(envelope)
+
+        adapter.handle_message.assert_awaited_once()
+        event = adapter.handle_message.call_args[0][0]
+        assert event.source.chat_id == "group:groupABC=="
+        assert event.source.chat_type == "group"
+
+    @pytest.mark.asyncio
+    async def test_handle_envelope_group_filtered_not_in_allowlist(self, monkeypatch):
+        adapter = _make_signal_adapter(monkeypatch, group_allowed="otherGroup==")
+        adapter.handle_message = AsyncMock()
+
+        envelope = {
+            "envelope": {
+                "sourceNumber": "+15559999999",
+                "timestamp": 1712345678000,
+                "dataMessage": {
+                    "message": "Hello",
+                    "groupInfo": {"groupId": "groupABC=="},
+                    "attachments": [],
+                },
+            }
+        }
+        await adapter._handle_envelope(envelope)
+        adapter.handle_message.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_handle_envelope_group_wildcard_allows_all(self, monkeypatch):
+        adapter = _make_signal_adapter(monkeypatch, group_allowed="*")
+        adapter.handle_message = AsyncMock()
+
+        envelope = {
+            "envelope": {
+                "sourceNumber": "+15559999999",
+                "timestamp": 1712345678000,
+                "dataMessage": {
+                    "message": "Hello",
+                    "groupInfo": {"groupId": "anyGroupId=="},
+                    "attachments": [],
+                },
+            }
+        }
+        await adapter._handle_envelope(envelope)
+        adapter.handle_message.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_handle_envelope_no_groups_by_default(self, monkeypatch):
+        adapter = _make_signal_adapter(monkeypatch)  # group_allowed=""
+        adapter.handle_message = AsyncMock()
+
+        envelope = {
+            "envelope": {
+                "sourceNumber": "+15559999999",
+                "timestamp": 1712345678000,
+                "dataMessage": {
+                    "message": "Hello",
+                    "groupInfo": {"groupId": "someGroup=="},
+                    "attachments": [],
+                },
+            }
+        }
+        await adapter._handle_envelope(envelope)
+        adapter.handle_message.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_handle_envelope_self_message_filtered(self, monkeypatch):
+        adapter = _make_signal_adapter(monkeypatch)
+        adapter.handle_message = AsyncMock()
+
+        envelope = {
+            "envelope": {
+                "sourceNumber": "+15551234567",  # == adapter.account
+                "timestamp": 1712345678000,
+                "dataMessage": {"message": "From self", "attachments": []},
+            }
+        }
+        await adapter._handle_envelope(envelope)
+        adapter.handle_message.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_handle_envelope_note_to_self(self, monkeypatch):
+        adapter = _make_signal_adapter(monkeypatch)
+        adapter.handle_message = AsyncMock()
+
+        envelope = {
+            "envelope": {
+                "sourceNumber": "+15551234567",
+                "sourceUuid": "uuid-self",
+                "timestamp": 1712345678000,
+                "syncMessage": {
+                    "sentMessage": {
+                        "destinationNumber": "+15551234567",
+                        "message": "Note to self",
+                        "timestamp": 9999999,
+                        "attachments": [],
+                    }
+                },
+            }
+        }
+        await adapter._handle_envelope(envelope)
+
+        adapter.handle_message.assert_awaited_once()
+        event = adapter.handle_message.call_args[0][0]
+        assert event.text == "Note to self"
+
+    @pytest.mark.asyncio
+    async def test_handle_envelope_echo_back_filtered(self, monkeypatch):
+        adapter = _make_signal_adapter(monkeypatch)
+        adapter.handle_message = AsyncMock()
+        adapter._recent_sent_timestamps.add(1712345678000)
+
+        envelope = {
+            "envelope": {
+                "sourceNumber": "+15551234567",
+                "timestamp": 1712345678000,
+                "syncMessage": {
+                    "sentMessage": {
+                        "destinationNumber": "+15551234567",
+                        "message": "Echo",
+                        "timestamp": 1712345678000,
+                        "attachments": [],
+                    }
+                },
+            }
+        }
+        await adapter._handle_envelope(envelope)
+        adapter.handle_message.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_handle_envelope_edit_message(self, monkeypatch):
+        adapter = _make_signal_adapter(monkeypatch)
+        adapter.handle_message = AsyncMock()
+
+        envelope = {
+            "envelope": {
+                "sourceNumber": "+15559999999",
+                "sourceUuid": "uuid-alice",
+                "timestamp": 1712345678000,
+                "editMessage": {
+                    "dataMessage": {"message": "Edited text", "attachments": []},
+                },
+            }
+        }
+        await adapter._handle_envelope(envelope)
+
+        adapter.handle_message.assert_awaited_once()
+        event = adapter.handle_message.call_args[0][0]
+        assert event.text == "Edited text"
+
+    @pytest.mark.asyncio
+    async def test_handle_envelope_story_filtered(self, monkeypatch):
+        adapter = _make_signal_adapter(monkeypatch)
+        adapter.handle_message = AsyncMock()
+
+        envelope = {
+            "envelope": {
+                "sourceNumber": "+15559999999",
+                "timestamp": 1712345678000,
+                "storyMessage": {"fileAttachment": {"contentType": "image/jpeg"}},
+                # dataMessage present — story filter must fire before dataMessage check
+                "dataMessage": {"message": "Would be handled", "attachments": []},
+            }
+        }
+        await adapter._handle_envelope(envelope)
+        adapter.handle_message.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_handle_envelope_no_sender(self, monkeypatch):
+        adapter = _make_signal_adapter(monkeypatch)
+        adapter.handle_message = AsyncMock()
+
+        envelope = {
+            "envelope": {
+                "timestamp": 1712345678000,
+                "dataMessage": {"message": "Hello", "attachments": []},
+            }
+        }
+        await adapter._handle_envelope(envelope)
+        adapter.handle_message.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_handle_envelope_no_data_message(self, monkeypatch):
+        adapter = _make_signal_adapter(monkeypatch)
+        adapter.handle_message = AsyncMock()
+
+        envelope = {
+            "envelope": {
+                "sourceNumber": "+15559999999",
+                "timestamp": 1712345678000,
+            }
+        }
+        await adapter._handle_envelope(envelope)
+        adapter.handle_message.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_handle_envelope_with_mentions(self, monkeypatch):
+        adapter = _make_signal_adapter(monkeypatch)
+        adapter.handle_message = AsyncMock()
+
+        envelope = {
+            "envelope": {
+                "sourceNumber": "+15559999999",
+                "timestamp": 1712345678000,
+                "dataMessage": {
+                    "message": "Hello \uFFFC!",
+                    "mentions": [{"start": 6, "length": 1, "number": "+15558888888"}],
+                    "attachments": [],
+                },
+            }
+        }
+        await adapter._handle_envelope(envelope)
+
+        event = adapter.handle_message.call_args[0][0]
+        assert "@+15558888888" in event.text
+        assert "\uFFFC" not in event.text
+
+    @pytest.mark.asyncio
+    async def test_handle_envelope_with_attachments(self, monkeypatch):
+        adapter = _make_signal_adapter(monkeypatch)
+        adapter.handle_message = AsyncMock()
+        adapter._fetch_attachment = AsyncMock(return_value=("/tmp/signal_test.png", ".png"))
+
+        envelope = {
+            "envelope": {
+                "sourceNumber": "+15559999999",
+                "timestamp": 1712345678000,
+                "dataMessage": {
+                    "message": "",
+                    "attachments": [{"id": "att-123", "contentType": "image/png", "size": 1000}],
+                },
+            }
+        }
+        await adapter._handle_envelope(envelope)
+
+        adapter._fetch_attachment.assert_awaited_once_with("att-123")
+        event = adapter.handle_message.call_args[0][0]
+        assert "/tmp/signal_test.png" in event.media_urls
+
+    @pytest.mark.asyncio
+    async def test_handle_envelope_audio_attachment_type(self, monkeypatch):
+        from gateway.platforms.base import MessageType
+        adapter = _make_signal_adapter(monkeypatch)
+        adapter.handle_message = AsyncMock()
+        adapter._fetch_attachment = AsyncMock(return_value=("/tmp/voice.ogg", ".ogg"))
+
+        envelope = {
+            "envelope": {
+                "sourceNumber": "+15559999999",
+                "timestamp": 1712345678000,
+                "dataMessage": {
+                    "message": "",
+                    "attachments": [{"id": "att-voice", "contentType": "audio/ogg", "size": 500}],
+                },
+            }
+        }
+        await adapter._handle_envelope(envelope)
+
+        event = adapter.handle_message.call_args[0][0]
+        assert event.message_type == MessageType.VOICE
+
+    @pytest.mark.asyncio
+    async def test_handle_envelope_image_attachment_type(self, monkeypatch):
+        from gateway.platforms.base import MessageType
+        adapter = _make_signal_adapter(monkeypatch)
+        adapter.handle_message = AsyncMock()
+        adapter._fetch_attachment = AsyncMock(return_value=("/tmp/photo.jpg", ".jpg"))
+
+        envelope = {
+            "envelope": {
+                "sourceNumber": "+15559999999",
+                "timestamp": 1712345678000,
+                "dataMessage": {
+                    "message": "",
+                    "attachments": [{"id": "att-photo", "contentType": "image/jpeg", "size": 2000}],
+                },
+            }
+        }
+        await adapter._handle_envelope(envelope)
+
+        event = adapter.handle_message.call_args[0][0]
+        assert event.message_type == MessageType.PHOTO
+
+    @pytest.mark.asyncio
+    async def test_handle_envelope_timestamp_parsed(self, monkeypatch):
+        from datetime import datetime, timezone
+        adapter = _make_signal_adapter(monkeypatch)
+        adapter.handle_message = AsyncMock()
+
+        ts_ms = 1712345678000
+        envelope = {
+            "envelope": {
+                "sourceNumber": "+15559999999",
+                "timestamp": ts_ms,
+                "dataMessage": {"message": "Hello", "attachments": []},
+            }
+        }
+        await adapter._handle_envelope(envelope)
+
+        event = adapter.handle_message.call_args[0][0]
+        expected = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc)
+        assert event.timestamp == expected
+
+
+# ---------------------------------------------------------------------------
+# send() — Additional Paths
+# ---------------------------------------------------------------------------
+
+class TestSignalSendAdditional:
+
+    @pytest.mark.asyncio
+    async def test_send_to_group(self, monkeypatch):
+        adapter = _make_signal_adapter(monkeypatch)
+        mock_rpc, captured = _stub_rpc({"timestamp": 1234})
+        adapter._rpc = mock_rpc
+        adapter._stop_typing_indicator = AsyncMock()
+
+        result = await adapter.send(chat_id="group:abc==", content="hello group")
+
+        assert result.success is True
+        assert captured[0]["params"]["groupId"] == "abc=="
+        assert "recipient" not in captured[0]["params"]
+
+    @pytest.mark.asyncio
+    async def test_send_rpc_failure(self, monkeypatch):
+        adapter = _make_signal_adapter(monkeypatch)
+        mock_rpc, _ = _stub_rpc(None)
+        adapter._rpc = mock_rpc
+        adapter._stop_typing_indicator = AsyncMock()
+
+        result = await adapter.send(chat_id="+15559999999", content="hello")
+
+        assert result.success is False
+
+    @pytest.mark.asyncio
+    async def test_send_tracks_timestamp(self, monkeypatch):
+        adapter = _make_signal_adapter(monkeypatch)
+        mock_rpc, _ = _stub_rpc({"timestamp": 9876543210})
+        adapter._rpc = mock_rpc
+        adapter._stop_typing_indicator = AsyncMock()
+
+        await adapter.send(chat_id="+15559999999", content="hello")
+
+        assert 9876543210 in adapter._recent_sent_timestamps
+
+
+# ---------------------------------------------------------------------------
+# send_typing() — Typing Indicators
+# ---------------------------------------------------------------------------
+
+class TestSignalSendTyping:
+
+    @pytest.mark.asyncio
+    async def test_send_typing_dm(self, monkeypatch):
+        adapter = _make_signal_adapter(monkeypatch)
+        mock_rpc, captured = _stub_rpc(None)
+        adapter._rpc = mock_rpc
+
+        await adapter.send_typing("+15559999999")
+
+        assert captured[0]["method"] == "sendTyping"
+        assert captured[0]["params"]["recipient"] == ["+15559999999"]
+        assert "groupId" not in captured[0]["params"]
+
+    @pytest.mark.asyncio
+    async def test_send_typing_group(self, monkeypatch):
+        adapter = _make_signal_adapter(monkeypatch)
+        mock_rpc, captured = _stub_rpc(None)
+        adapter._rpc = mock_rpc
+
+        await adapter.send_typing("group:mygroup==")
+
+        assert captured[0]["method"] == "sendTyping"
+        assert captured[0]["params"]["groupId"] == "mygroup=="
+        assert "recipient" not in captured[0]["params"]
+
+
+# ---------------------------------------------------------------------------
+# send_image() — URL-based Image Sending
+# ---------------------------------------------------------------------------
+
+class TestSignalSendImage:
+
+    @pytest.mark.asyncio
+    async def test_send_image_from_url(self, monkeypatch, tmp_path):
+        adapter = _make_signal_adapter(monkeypatch)
+        mock_rpc, captured = _stub_rpc({"timestamp": 1234})
+        adapter._rpc = mock_rpc
+        adapter._stop_typing_indicator = AsyncMock()
+
+        img_path = tmp_path / "downloaded.png"
+        img_path.write_bytes(b"\x89PNG" + b"\x00" * 100)
+
+        with patch("gateway.platforms.signal.cache_image_from_url", return_value=str(img_path)):
+            result = await adapter.send_image(
+                chat_id="+15559999999",
+                image_url="https://example.com/image.png",
+            )
+
+        assert result.success is True
+        assert captured[0]["params"]["attachments"] == [str(img_path)]
+
+    @pytest.mark.asyncio
+    async def test_send_image_from_file_url(self, monkeypatch, tmp_path):
+        adapter = _make_signal_adapter(monkeypatch)
+        mock_rpc, captured = _stub_rpc({"timestamp": 5678})
+        adapter._rpc = mock_rpc
+        adapter._stop_typing_indicator = AsyncMock()
+
+        img_path = tmp_path / "local.png"
+        img_path.write_bytes(b"\x89PNG" + b"\x00" * 100)
+
+        result = await adapter.send_image(
+            chat_id="+15559999999",
+            image_url=f"file://{img_path}",
+        )
+
+        assert result.success is True
+        assert captured[0]["params"]["attachments"] == [str(img_path)]
+
+    @pytest.mark.asyncio
+    async def test_send_image_download_failure(self, monkeypatch):
+        adapter = _make_signal_adapter(monkeypatch)
+        adapter._stop_typing_indicator = AsyncMock()
+
+        with patch("gateway.platforms.signal.cache_image_from_url", side_effect=Exception("download failed")):
+            result = await adapter.send_image(
+                chat_id="+15559999999",
+                image_url="https://example.com/broken.png",
+            )
+
+        assert result.success is False
+        assert "download failed" in result.error
+
+
+# ---------------------------------------------------------------------------
+# _rpc() — JSON-RPC 2.0 Communication
+# ---------------------------------------------------------------------------
+
+class TestSignalRpc:
+
+    @pytest.mark.asyncio
+    async def test_rpc_builds_jsonrpc_payload(self, monkeypatch):
+        adapter = _make_signal_adapter(monkeypatch)
+
+        mock_resp = MagicMock()
+        mock_resp.raise_for_status = MagicMock()
+        mock_resp.json.return_value = {"result": "ok"}
+        mock_client = MagicMock()
+        mock_client.post = AsyncMock(return_value=mock_resp)
+        adapter.client = mock_client
+
+        await adapter._rpc("testMethod", {"key": "val"}, rpc_id="test-1")
+
+        payload = mock_client.post.call_args.kwargs["json"]
+        assert payload["jsonrpc"] == "2.0"
+        assert payload["method"] == "testMethod"
+        assert payload["params"] == {"key": "val"}
+        assert payload["id"] == "test-1"
+
+    @pytest.mark.asyncio
+    async def test_rpc_returns_result(self, monkeypatch):
+        adapter = _make_signal_adapter(monkeypatch)
+
+        mock_resp = MagicMock()
+        mock_resp.raise_for_status = MagicMock()
+        mock_resp.json.return_value = {"result": {"data": "test_value"}}
+        mock_client = MagicMock()
+        mock_client.post = AsyncMock(return_value=mock_resp)
+        adapter.client = mock_client
+
+        result = await adapter._rpc("someMethod", {})
+        assert result == {"data": "test_value"}
+
+    @pytest.mark.asyncio
+    async def test_rpc_returns_none_on_error(self, monkeypatch):
+        adapter = _make_signal_adapter(monkeypatch)
+
+        mock_resp = MagicMock()
+        mock_resp.raise_for_status = MagicMock()
+        mock_resp.json.return_value = {"error": {"code": -1, "message": "bad request"}}
+        mock_client = MagicMock()
+        mock_client.post = AsyncMock(return_value=mock_resp)
+        adapter.client = mock_client
+
+        result = await adapter._rpc("badMethod", {})
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_rpc_returns_none_when_disconnected(self, monkeypatch):
+        adapter = _make_signal_adapter(monkeypatch)
+        adapter.client = None
+
+        result = await adapter._rpc("anyMethod", {})
+        assert result is None
+
+
+# ---------------------------------------------------------------------------
+# connect() / disconnect()
+# ---------------------------------------------------------------------------
+
+class TestSignalConnectDisconnect:
+
+    @pytest.mark.asyncio
+    async def test_connect_success(self, monkeypatch):
+        import asyncio
+        adapter = _make_signal_adapter(monkeypatch)
+
+        async def noop_sse(): pass
+        async def noop_health(): pass
+        adapter._sse_listener = noop_sse
+        adapter._health_monitor = noop_health
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_client = MagicMock()
+        mock_client.get = AsyncMock(return_value=mock_resp)
+
+        with patch("gateway.platforms.signal.httpx.AsyncClient", return_value=mock_client):
+            with patch("gateway.status.acquire_scoped_lock", return_value=(True, None)):
+                result = await adapter.connect()
+
+        await asyncio.sleep(0)  # let noop tasks complete
+
+        assert result is True
+        assert adapter._running is True
+        assert adapter._sse_task is not None
+
+    @pytest.mark.asyncio
+    async def test_connect_health_check_fails(self, monkeypatch):
+        adapter = _make_signal_adapter(monkeypatch)
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 500
+        mock_client = MagicMock()
+        mock_client.get = AsyncMock(return_value=mock_resp)
+
+        with patch("gateway.platforms.signal.httpx.AsyncClient", return_value=mock_client):
+            with patch("gateway.status.acquire_scoped_lock", return_value=(True, None)):
+                result = await adapter.connect()
+
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_connect_missing_url(self, monkeypatch):
+        adapter = _make_signal_adapter(monkeypatch, http_url="")
+        result = await adapter.connect()
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_disconnect_cancels_tasks(self, monkeypatch):
+        import asyncio
+        adapter = _make_signal_adapter(monkeypatch)
+
+        async def long_running():
+            await asyncio.sleep(100)
+
+        adapter._running = True
+        adapter._sse_task = asyncio.create_task(long_running())
+        adapter._health_monitor_task = asyncio.create_task(long_running())
+        adapter.client = AsyncMock()
+        adapter._phone_lock_identity = None
+
+        await adapter.disconnect()
+
+        assert not adapter._running
+        assert adapter._sse_task.cancelled()
+        assert adapter._health_monitor_task.cancelled()
+        assert adapter.client is None
+
+
+# ---------------------------------------------------------------------------
+# get_chat_info()
+# ---------------------------------------------------------------------------
+
+class TestSignalGetChatInfo:
+
+    @pytest.mark.asyncio
+    async def test_get_chat_info_group(self, monkeypatch):
+        adapter = _make_signal_adapter(monkeypatch)
+
+        info = await adapter.get_chat_info("group:myGroupId==")
+
+        assert info["type"] == "group"
+        assert info["chat_id"] == "group:myGroupId=="
+
+    @pytest.mark.asyncio
+    async def test_get_chat_info_dm(self, monkeypatch):
+        adapter = _make_signal_adapter(monkeypatch)
+        mock_rpc, captured = _stub_rpc({"name": "Alice", "profileName": "Alice Smith"})
+        adapter._rpc = mock_rpc
+
+        info = await adapter.get_chat_info("+15559999999")
+
+        assert info["type"] == "dm"
+        assert info["chat_id"] == "+15559999999"
+        assert captured[0]["method"] == "getContact"
+        assert captured[0]["params"]["contactAddress"] == "+15559999999"
+
+
+# ---------------------------------------------------------------------------
+# _track_sent_timestamp()
+# ---------------------------------------------------------------------------
+
+class TestSignalTrackSentTimestamp:
+
+    def test_track_sent_timestamp_basic(self, monkeypatch):
+        adapter = _make_signal_adapter(monkeypatch)
+        adapter._track_sent_timestamp({"timestamp": 1234567890})
+        assert 1234567890 in adapter._recent_sent_timestamps
+
+    def test_track_sent_timestamp_max_cap(self, monkeypatch):
+        adapter = _make_signal_adapter(monkeypatch)
+        for i in range(adapter._max_recent_timestamps):
+            adapter._recent_sent_timestamps.add(i)
+        # Adding one more should trigger a pop, keeping count at max
+        adapter._track_sent_timestamp({"timestamp": 999999})
+        assert len(adapter._recent_sent_timestamps) == adapter._max_recent_timestamps
+
+
+# ---------------------------------------------------------------------------
+# _ext_to_mime() helper
+# ---------------------------------------------------------------------------
+
+class TestSignalExtToMime:
+
+    def test_ext_to_mime_mappings(self):
+        from gateway.platforms.signal import _ext_to_mime
+        assert _ext_to_mime(".jpg") == "image/jpeg"
+        assert _ext_to_mime(".jpeg") == "image/jpeg"
+        assert _ext_to_mime(".png") == "image/png"
+        assert _ext_to_mime(".gif") == "image/gif"
+        assert _ext_to_mime(".webp") == "image/webp"
+        assert _ext_to_mime(".ogg") == "audio/ogg"
+        assert _ext_to_mime(".mp3") == "audio/mpeg"
+        assert _ext_to_mime(".wav") == "audio/wav"
+        assert _ext_to_mime(".mp4") == "video/mp4"
+        assert _ext_to_mime(".pdf") == "application/pdf"
+        assert _ext_to_mime(".zip") == "application/zip"
+        assert _ext_to_mime(".unknown") == "application/octet-stream"
+
+
+# ---------------------------------------------------------------------------
+# Reactions (_send_reaction / on_processing_start / on_processing_complete)
+# ---------------------------------------------------------------------------
+
+class TestSignalReactions:
+
+    @pytest.mark.asyncio
+    async def test_send_reaction_dm(self, monkeypatch):
+        adapter = _make_signal_adapter(monkeypatch)
+        mock_rpc, captured = _stub_rpc({"timestamp": 1234})
+        adapter._rpc = mock_rpc
+
+        result = await adapter._send_reaction(
+            chat_id="+15559999999",
+            target_timestamp="1712345678000",
+            emoji="\U0001f440",
+            target_author="+15559999999",
+        )
+
+        assert result is True
+        assert captured[0]["method"] == "sendReaction"
+        assert captured[0]["params"]["emoji"] == "\U0001f440"
+        assert captured[0]["params"]["targetTimestamp"] == 1712345678000
+        assert captured[0]["params"]["recipient"] == "+15559999999"
+        assert captured[0]["params"]["targetAuthor"] == "+15559999999"
+        assert "groupId" not in captured[0]["params"]
+
+    @pytest.mark.asyncio
+    async def test_send_reaction_group(self, monkeypatch):
+        adapter = _make_signal_adapter(monkeypatch)
+        mock_rpc, captured = _stub_rpc({"timestamp": 5678})
+        adapter._rpc = mock_rpc
+
+        result = await adapter._send_reaction(
+            chat_id="group:myGroup==",
+            target_timestamp="1712345678000",
+            emoji="\u2705",
+            target_author="+15559999999",
+        )
+
+        assert result is True
+        assert captured[0]["params"]["groupId"] == "myGroup=="
+        assert "recipient" not in captured[0]["params"]
+
+    @pytest.mark.asyncio
+    async def test_send_reaction_no_timestamp(self, monkeypatch):
+        adapter = _make_signal_adapter(monkeypatch)
+        mock_rpc, captured = _stub_rpc({"timestamp": 1234})
+        adapter._rpc = mock_rpc
+
+        result = await adapter._send_reaction(
+            chat_id="+15559999999",
+            target_timestamp="",
+            emoji="\U0001f440",
+        )
+
+        assert result is False
+        assert len(captured) == 0  # RPC must not be called
+
+    @pytest.mark.asyncio
+    async def test_on_processing_start_sends_eyes(self, monkeypatch):
+        adapter = _make_signal_adapter(monkeypatch)
+        adapter._send_reaction = AsyncMock(return_value=True)
+
+        event = MagicMock()
+        event.message_id = "1712345678000"
+        event.source.chat_id = "+15559999999"
+        event.source.user_id = "+15559999999"
+
+        await adapter.on_processing_start(event)
+
+        adapter._send_reaction.assert_awaited_once_with(
+            "+15559999999", "1712345678000", "\U0001f440", target_author="+15559999999"
+        )
+
+    @pytest.mark.asyncio
+    async def test_on_processing_complete_success(self, monkeypatch):
+        adapter = _make_signal_adapter(monkeypatch)
+        adapter._send_reaction = AsyncMock(return_value=True)
+
+        event = MagicMock()
+        event.message_id = "1712345678000"
+        event.source.chat_id = "+15559999999"
+        event.source.user_id = "+15559999999"
+
+        await adapter.on_processing_complete(event, success=True)
+
+        adapter._send_reaction.assert_awaited_once_with(
+            "+15559999999", "1712345678000", "\u2705", target_author="+15559999999"
+        )
+
+    @pytest.mark.asyncio
+    async def test_on_processing_complete_failure(self, monkeypatch):
+        adapter = _make_signal_adapter(monkeypatch)
+        adapter._send_reaction = AsyncMock(return_value=True)
+
+        event = MagicMock()
+        event.message_id = "1712345678000"
+        event.source.chat_id = "+15559999999"
+        event.source.user_id = "+15559999999"
+
+        await adapter.on_processing_complete(event, success=False)
+
+        adapter._send_reaction.assert_awaited_once_with(
+            "+15559999999", "1712345678000", "\u274c", target_author="+15559999999"
+        )
+
+
+# ---------------------------------------------------------------------------
+# message_id in MessageEvent
+# ---------------------------------------------------------------------------
+
+class TestSignalMessageId:
+
+    @pytest.mark.asyncio
+    async def test_handle_envelope_sets_message_id(self, monkeypatch):
+        adapter = _make_signal_adapter(monkeypatch)
+        adapter.handle_message = AsyncMock()
+
+        ts_ms = 1712345678000
+        envelope = {
+            "envelope": {
+                "sourceNumber": "+15559999999",
+                "timestamp": ts_ms,
+                "dataMessage": {"message": "Hello", "attachments": []},
+            }
+        }
+        await adapter._handle_envelope(envelope)
+
+        event = adapter.handle_message.call_args[0][0]
+        assert event.message_id == str(ts_ms)
+
+
+# ---------------------------------------------------------------------------
+# edit_message()
+# ---------------------------------------------------------------------------
+
+class TestSignalEditMessage:
+
+    @pytest.mark.asyncio
+    async def test_edit_message_dm(self, monkeypatch):
+        adapter = _make_signal_adapter(monkeypatch)
+        mock_rpc, captured = _stub_rpc({"timestamp": 9999999999})
+        adapter._rpc = mock_rpc
+
+        result = await adapter.edit_message(
+            chat_id="+15559999999",
+            message_id="1712345678000",
+            content="corrected text",
+        )
+
+        assert result.success is True
+        p = captured[0]["params"]
+        assert captured[0]["method"] == "send"
+        assert p["editTimestamp"] == 1712345678000
+        assert p["recipient"] == "+15559999999"
+        assert p["message"] == "corrected text"
+        assert "groupId" not in p
+
+    @pytest.mark.asyncio
+    async def test_edit_message_group(self, monkeypatch):
+        adapter = _make_signal_adapter(monkeypatch)
+        mock_rpc, captured = _stub_rpc({"timestamp": 9999999999})
+        adapter._rpc = mock_rpc
+
+        result = await adapter.edit_message(
+            chat_id="group:myGroup==",
+            message_id="1712345678000",
+            content="edited group message",
+        )
+
+        assert result.success is True
+        p = captured[0]["params"]
+        assert p["groupId"] == "myGroup=="
+        assert p["editTimestamp"] == 1712345678000
+        assert "recipient" not in p
+
+    @pytest.mark.asyncio
+    async def test_edit_message_no_message_id(self, monkeypatch):
+        adapter = _make_signal_adapter(monkeypatch)
+        mock_rpc, captured = _stub_rpc({"timestamp": 1234})
+        adapter._rpc = mock_rpc
+
+        result = await adapter.edit_message(
+            chat_id="+15559999999",
+            message_id="",
+            content="anything",
+        )
+
+        assert result.success is False
+        assert len(captured) == 0  # RPC must not be called
+
+    @pytest.mark.asyncio
+    async def test_edit_message_rpc_failure(self, monkeypatch):
+        adapter = _make_signal_adapter(monkeypatch)
+        mock_rpc, _ = _stub_rpc(None)
+        adapter._rpc = mock_rpc
+
+        result = await adapter.edit_message(
+            chat_id="+15559999999",
+            message_id="1712345678000",
+            content="text",
+        )
+
+        assert result.success is False
+        assert result.error == "RPC failed"
+
+    @pytest.mark.asyncio
+    async def test_edit_message_tracks_timestamp(self, monkeypatch):
+        adapter = _make_signal_adapter(monkeypatch)
+        mock_rpc, _ = _stub_rpc({"timestamp": 8888888888})
+        adapter._rpc = mock_rpc
+
+        await adapter.edit_message(
+            chat_id="+15559999999",
+            message_id="1712345678000",
+            content="text",
+        )
+
+        assert 8888888888 in adapter._recent_sent_timestamps

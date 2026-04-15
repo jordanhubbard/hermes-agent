@@ -503,6 +503,7 @@ class SignalAdapter(BasePlatformAdapter):
             media_urls=media_urls,
             media_types=media_types,
             timestamp=timestamp,
+            message_id=str(ts_ms) if ts_ms else None,
         )
 
         logger.debug("Signal: message from %s in %s: %s",
@@ -617,6 +618,39 @@ class SignalAdapter(BasePlatformAdapter):
             _msg_id = str(result.get("timestamp", "")) if isinstance(result, dict) else None
             return SendResult(success=True, message_id=_msg_id or None)
         return SendResult(success=False, error="RPC send failed")
+
+    async def edit_message(
+        self,
+        chat_id: str,
+        message_id: str,
+        content: str,
+    ) -> SendResult:
+        """Edit a previously sent message.
+
+        Signal identifies messages by timestamp. The message_id from send()
+        is the timestamp of the original message.
+        """
+        if not message_id:
+            return SendResult(success=False, error="No message_id to edit")
+
+        params: Dict[str, Any] = {
+            "account": self.account,
+            "message": content,
+            "editTimestamp": int(message_id),
+        }
+
+        if chat_id.startswith("group:"):
+            params["groupId"] = chat_id[6:]
+        else:
+            params["recipient"] = chat_id
+
+        result = await self._rpc("send", params)
+        if result is None:
+            return SendResult(success=False, error="RPC failed")
+
+        self._track_sent_timestamp(result)
+        _msg_id = str(result.get("timestamp", "")) if isinstance(result, dict) else None
+        return SendResult(success=True, message_id=_msg_id or None)
 
     def _track_sent_timestamp(self, rpc_result) -> None:
         """Record outbound message timestamp for echo-back filtering."""
@@ -794,6 +828,60 @@ class SignalAdapter(BasePlatformAdapter):
         """Public interface for stopping typing — called by base adapter's
         _keep_typing finally block to clean up platform-level typing tasks."""
         await self._stop_typing_indicator(chat_id)
+
+    # ------------------------------------------------------------------
+    # Reactions
+    # ------------------------------------------------------------------
+
+    async def _send_reaction(
+        self,
+        chat_id: str,
+        target_timestamp: str,
+        emoji: str,
+        target_author: Optional[str] = None,
+    ) -> bool:
+        """Send an emoji reaction to a message.
+
+        Signal identifies messages by (author, timestamp) pairs.
+        target_timestamp: the message timestamp (ms since epoch)
+        target_author: the phone number of the message author
+        """
+        if not target_timestamp:
+            return False
+
+        params: Dict[str, Any] = {
+            "account": self.account,
+            "emoji": emoji,
+            "targetTimestamp": int(target_timestamp),
+        }
+
+        if target_author:
+            params["targetAuthor"] = target_author
+
+        if chat_id.startswith("group:"):
+            params["groupId"] = chat_id.removeprefix("group:")
+        else:
+            params["recipient"] = chat_id
+
+        result = await self._rpc("sendReaction", params)
+        return result is not None
+
+    async def on_processing_start(self, event: "MessageEvent") -> None:
+        """Add 👀 reaction when processing begins."""
+        msg_id = event.message_id
+        chat_id = event.source.chat_id
+        author = event.source.user_id
+        if msg_id and chat_id:
+            await self._send_reaction(chat_id, msg_id, "\U0001f440", target_author=author)
+
+    async def on_processing_complete(self, event: "MessageEvent", success: bool) -> None:
+        """Add ✅ or ❌ reaction when processing completes."""
+        msg_id = event.message_id
+        chat_id = event.source.chat_id
+        author = event.source.user_id
+        if msg_id and chat_id:
+            emoji = "\u2705" if success else "\u274c"
+            await self._send_reaction(chat_id, msg_id, emoji, target_author=author)
 
     # ------------------------------------------------------------------
     # Chat Info
