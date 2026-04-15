@@ -35,6 +35,7 @@ sys.path.insert(0, str(_Path(__file__).resolve().parents[2]))
 from hermes_constants import get_hermes_home
 
 from gateway.config import Platform, PlatformConfig
+from gateway.platforms.helpers import MessageDeduplicator
 from gateway.platforms.base import (
     BasePlatformAdapter,
     MessageEvent,
@@ -94,11 +95,9 @@ class SlackAdapter(BasePlatformAdapter):
         self._team_clients: Dict[str, AsyncWebClient] = {}   # team_id → WebClient
         self._team_bot_user_ids: Dict[str, str] = {}          # team_id → bot_user_id
         self._channel_team: Dict[str, str] = {}                # channel_id → team_id
-        # Dedup cache: event_ts → timestamp.  Prevents duplicate bot
-        # responses when Socket Mode reconnects redeliver events.
-        self._seen_messages: Dict[str, float] = {}
-        self._SEEN_TTL = 300   # 5 minutes
-        self._SEEN_MAX = 2000  # prune threshold
+        # Dedup cache: prevents duplicate bot responses when Socket Mode
+        # reconnects redeliver events.
+        self._dedup = MessageDeduplicator()
         # Track pending approval message_ts → resolved flag to prevent
         # double-clicks on approval buttons.
         self._approval_resolved: Dict[str, bool] = {}
@@ -1157,17 +1156,8 @@ class SlackAdapter(BasePlatformAdapter):
         """Handle an incoming Slack message event."""
         # Dedup: Slack Socket Mode can redeliver events after reconnects (#4777)
         event_ts = event.get("ts", "")
-        if event_ts:
-            now = time.time()
-            if event_ts in self._seen_messages:
-                return
-            self._seen_messages[event_ts] = now
-            if len(self._seen_messages) > self._SEEN_MAX:
-                cutoff = now - self._SEEN_TTL
-                self._seen_messages = {
-                    k: v for k, v in self._seen_messages.items()
-                    if v > cutoff
-                }
+        if event_ts and self._dedup.is_duplicate(event_ts):
+            return
 
         # Bot message filtering (SLACK_ALLOW_BOTS / config allow_bots):
         #   "none"     — ignore all bot messages (default, backward-compatible)

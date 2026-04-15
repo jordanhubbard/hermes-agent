@@ -60,6 +60,8 @@ _ANTHROPIC_OUTPUT_LIMITS = {
     "claude-3-opus":       4_096,
     "claude-3-sonnet":     4_096,
     "claude-3-haiku":      4_096,
+    # Third-party Anthropic-compatible providers
+    "minimax":            131_072,
 }
 
 # For any model not in the table, assume the highest current limit.
@@ -161,18 +163,27 @@ def _get_claude_code_version() -> str:
 
 
 def _is_oauth_token(key: str) -> bool:
-    """Check if the key is an OAuth/setup token (not a regular Console API key).
+    """Check if the key is an Anthropic OAuth/setup token.
 
-    Regular API keys start with 'sk-ant-api'. Everything else (setup-tokens
-    starting with 'sk-ant-oat', managed keys, JWTs, etc.) needs Bearer auth.
+    Positively identifies Anthropic OAuth tokens by their key format:
+    - ``sk-ant-`` prefix (but NOT ``sk-ant-api``) → setup tokens, managed keys
+    - ``eyJ`` prefix → JWTs from the Anthropic OAuth flow
+
+    Non-Anthropic keys (MiniMax, Alibaba, etc.) don't match either pattern
+    and correctly return False.
     """
     if not key:
         return False
-    # Regular Console API keys use x-api-key header
+    # Regular Anthropic Console API keys — x-api-key auth, never OAuth
     if key.startswith("sk-ant-api"):
         return False
-    # Everything else (setup-tokens, managed keys, JWTs) uses Bearer auth
-    return True
+    # Anthropic-issued tokens (setup-tokens sk-ant-oat-*, managed keys)
+    if key.startswith("sk-ant-"):
+        return True
+    # JWTs from Anthropic OAuth flow
+    if key.startswith("eyJ"):
+        return True
+    return False
 
 
 def _normalize_base_url_text(base_url) -> str:
@@ -1219,9 +1230,10 @@ def build_anthropic_kwargs(
     When *base_url* points to a third-party Anthropic-compatible endpoint,
     thinking block signatures are stripped (they are Anthropic-proprietary).
 
-    When *fast_mode* is True, adds ``speed: "fast"`` and the fast-mode beta
-    header for ~2.5x faster output throughput on Opus 4.6.  Currently only
-    supported on native Anthropic endpoints (not third-party compatible ones).
+    When *fast_mode* is True, adds ``extra_body["speed"] = "fast"`` and the
+    fast-mode beta header for ~2.5x faster output throughput on Opus 4.6.
+    Currently only supported on native Anthropic endpoints (not third-party
+    compatible ones).
     """
     system, anthropic_messages = convert_messages_to_anthropic(messages, base_url=base_url)
     anthropic_tools = convert_tools_to_anthropic(tools) if tools else []
@@ -1304,9 +1316,10 @@ def build_anthropic_kwargs(
     # Map reasoning_config to Anthropic's thinking parameter.
     # Claude 4.6 models use adaptive thinking + output_config.effort.
     # Older models use manual thinking with budget_tokens.
-    # Haiku and MiniMax models do NOT support extended thinking — skip entirely.
+    # MiniMax Anthropic-compat endpoints support thinking (manual mode only,
+    # not adaptive).  Haiku does NOT support extended thinking — skip entirely.
     if reasoning_config and isinstance(reasoning_config, dict):
-        if reasoning_config.get("enabled") is not False and "haiku" not in model.lower() and "minimax" not in model.lower():
+        if reasoning_config.get("enabled") is not False and "haiku" not in model.lower():
             effort = str(reasoning_config.get("effort", "medium")).lower()
             budget = THINKING_BUDGET.get(effort, 8000)
             if _supports_adaptive_thinking(model):
@@ -1321,11 +1334,11 @@ def build_anthropic_kwargs(
                 kwargs["max_tokens"] = max(effective_max_tokens, budget + 4096)
 
     # ── Fast mode (Opus 4.6 only) ────────────────────────────────────
-    # Adds speed:"fast" + the fast-mode beta header for ~2.5x output speed.
-    # Only for native Anthropic endpoints — third-party providers would
-    # reject the unknown beta header and speed parameter.
+    # Adds extra_body.speed="fast" + the fast-mode beta header for ~2.5x
+    # output speed. Only for native Anthropic endpoints — third-party
+    # providers would reject the unknown beta header and speed parameter.
     if fast_mode and not _is_third_party_anthropic_endpoint(base_url):
-        kwargs["speed"] = "fast"
+        kwargs.setdefault("extra_body", {})["speed"] = "fast"
         # Build extra_headers with ALL applicable betas (the per-request
         # extra_headers override the client-level anthropic-beta header).
         betas = list(_common_betas_for_base_url(base_url))
