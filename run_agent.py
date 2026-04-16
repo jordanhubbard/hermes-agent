@@ -201,6 +201,18 @@ class IterationBudget:
             if self._used > 0:
                 self._used -= 1
 
+    def reset(self, new_max: int | None = None) -> None:
+        """Reset the counter (e.g. after context compression creates a new session).
+
+        Optionally supply *new_max* to also update the cap — useful when the
+        caller wants to give the agent a smaller budget for the continuation
+        session to avoid runaway cost after repeated compressions.
+        """
+        with self._lock:
+            self._used = 0
+            if new_max is not None:
+                self.max_total = new_max
+
     @property
     def used(self) -> int:
         return self._used
@@ -10695,6 +10707,14 @@ class AIAgent:
                         # _flush_messages_to_session_db writes compressed messages
                         # to the new session (see preflight compression comment).
                         conversation_history = None
+                        # Reset iteration counters so the agent gets a fresh
+                        # budget for the continuation session.  Without this the
+                        # budget was already partially consumed before compression
+                        # and the loop would immediately exit on the next check.
+                        # Cap at max_iterations so repeated compressions don't
+                        # grant unlimited iterations.
+                        self.iteration_budget.reset()
+                        api_call_count = 0
                     
                     # Save session log incrementally (so progress is visible even if interrupted)
                     self._session_messages = messages
@@ -11075,8 +11095,14 @@ class AIAgent:
                 )
             final_response = self._handle_max_iterations(messages, api_call_count)
         
-        # Determine if conversation completed successfully
-        completed = final_response is not None and api_call_count < self.max_iterations
+        # Determine if conversation completed successfully.
+        # A run is "completed" when a final_response was produced AND the agent
+        # was not cut off mid-tool-call.  Budget exhaustion with a summary from
+        # _handle_max_iterations still counts as completed — the summary IS the
+        # result.  What does NOT count: the agent stopping mid-tool (last message
+        # is a tool result, meaning no final prose was ever written).
+        _last_role = messages[-1].get("role") if messages else None
+        completed = final_response is not None and _last_role != "tool"
 
         # Save trajectory if enabled
         self._save_trajectory(messages, user_message, completed)
