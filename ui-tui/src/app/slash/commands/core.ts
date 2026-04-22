@@ -1,8 +1,15 @@
+import { NO_CONFIRM_DESTRUCTIVE } from '../../../config/env.js'
 import { dailyFortune, randomFortune } from '../../../content/fortunes.js'
 import { HOTKEYS } from '../../../content/hotkeys.js'
 import { nextDetailsMode, parseDetailsMode } from '../../../domain/details.js'
-import type { ConfigGetValueResponse, ConfigSetResponse, SessionUndoResponse } from '../../../gatewayTypes.js'
+import type {
+  ConfigGetValueResponse,
+  ConfigSetResponse,
+  SessionSteerResponse,
+  SessionUndoResponse
+} from '../../../gatewayTypes.js'
 import { writeOsc52Clipboard } from '../../../lib/osc52.js'
+import { configureDetectedTerminalKeybindings, configureTerminalKeybindings } from '../../../lib/terminalSetup.js'
 import type { DetailsMode, Msg, PanelSection } from '../../../types.js'
 import { patchOverlayState } from '../../overlayStore.js'
 import { patchUiState } from '../../uiStore.js'
@@ -77,8 +84,27 @@ export const coreCommands: SlashCommand[] = [
         return
       }
 
-      patchUiState({ status: 'forging session…' })
-      ctx.session.newSession(cmd.startsWith('/new') ? 'new session started' : undefined)
+      const isNew = cmd.startsWith('/new')
+
+      const commit = () => {
+        patchUiState({ status: 'forging session…' })
+        ctx.session.newSession(isNew ? 'new session started' : undefined)
+      }
+
+      if (NO_CONFIRM_DESTRUCTIVE) {
+        return commit()
+      }
+
+      patchOverlayState({
+        confirm: {
+          cancelLabel: 'No, keep going',
+          confirmLabel: isNew ? 'Yes, start a new session' : 'Yes, clear the session',
+          danger: true,
+          detail: 'This ends the current conversation and clears the transcript.',
+          onConfirm: commit,
+          title: isNew ? 'Start a new session?' : 'Clear the current session?'
+        }
+      })
     }
   },
 
@@ -199,9 +225,44 @@ export const coreCommands: SlashCommand[] = [
   },
 
   {
-    help: 'paste clipboard image',
+    help: 'attach clipboard image',
     name: 'paste',
     run: (arg, ctx) => (arg ? ctx.transcript.sys('usage: /paste') : ctx.composer.paste())
+  },
+
+  {
+    help: 'configure IDE terminal keybindings for multiline + undo/redo',
+    name: 'terminal-setup',
+    run: (arg, ctx) => {
+      const target = arg.trim().toLowerCase()
+
+      if (target && !['auto', 'cursor', 'vscode', 'windsurf'].includes(target)) {
+        return ctx.transcript.sys('usage: /terminal-setup [auto|vscode|cursor|windsurf]')
+      }
+
+      const runner =
+        !target || target === 'auto'
+          ? configureDetectedTerminalKeybindings()
+          : configureTerminalKeybindings(target as 'cursor' | 'vscode' | 'windsurf')
+
+      void runner
+        .then(result => {
+          if (ctx.stale()) {
+            return
+          }
+
+          ctx.transcript.sys(result.message)
+
+          if (result.success && result.requiresRestart) {
+            ctx.transcript.sys('restart the IDE terminal for the new keybindings to take effect')
+          }
+        })
+        .catch(error => {
+          if (!ctx.stale()) {
+            ctx.transcript.sys(`terminal setup failed: ${String(error)}`)
+          }
+        })
+    }
   },
 
   {
@@ -211,6 +272,34 @@ export const coreCommands: SlashCommand[] = [
       const text = ctx.gateway.gw.getLogTail(Math.min(80, Math.max(1, parseInt(arg, 10) || 20)))
 
       text ? ctx.transcript.page(text, 'Logs') : ctx.transcript.sys('no gateway logs')
+    }
+  },
+
+  {
+    help: 'view current transcript (user + assistant messages)',
+    name: 'history',
+    run: (arg, ctx) => {
+      // The CLI-side `/history` runs in a detached slash-worker subprocess
+      // that never sees the TUI's turns — it only surfaces whatever was
+      // persisted before this process started.  Render the TUI's own
+      // transcript so `/history` actually reflects what the user just did.
+      const items = ctx.local.getHistoryItems().filter(m => m.role === 'user' || m.role === 'assistant')
+
+      if (!items.length) {
+        return ctx.transcript.sys('no conversation yet')
+      }
+
+      const preview = Math.max(80, parseInt(arg, 10) || 400)
+
+      const lines = items.map((m, i) => {
+        const tag = m.role === 'user' ? `You #${i + 1}` : `Hermes #${i + 1}`
+        const body = m.text.trim() || (m.tools?.length ? `(${m.tools.length} tool calls)` : '(empty)')
+        const clipped = body.length > preview ? `${body.slice(0, preview).trimEnd()}…` : body
+
+        return `[${tag}]\n${clipped}`
+      })
+
+      ctx.transcript.page(lines.join('\n\n'), 'History')
     }
   },
 
@@ -242,6 +331,44 @@ export const coreCommands: SlashCommand[] = [
 
       ctx.composer.enqueue(arg)
       ctx.transcript.sys(`queued: "${arg.slice(0, 50)}${arg.length > 50 ? '…' : ''}"`)
+    }
+  },
+
+  {
+    help: 'inject a message after the next tool call (no interrupt)',
+    name: 'steer',
+    run: (arg, ctx) => {
+      const payload = arg?.trim() ?? ''
+
+      if (!payload) {
+        return ctx.transcript.sys('usage: /steer <prompt>')
+      }
+
+      // If the agent isn't running, fall back to the queue so the user's
+      // message isn't lost — identical semantics to the gateway handler.
+      if (!ctx.ui.busy || !ctx.sid) {
+        ctx.composer.enqueue(payload)
+        ctx.transcript.sys(
+          `no active turn — queued for next: "${payload.slice(0, 50)}${payload.length > 50 ? '…' : ''}"`
+        )
+
+        return
+      }
+
+      ctx.gateway
+        .rpc<SessionSteerResponse>('session.steer', { session_id: ctx.sid, text: payload })
+        .then(
+          ctx.guarded<SessionSteerResponse>(r => {
+            if (r?.status === 'queued') {
+              ctx.transcript.sys(
+                `⏩ steer queued — arrives after next tool call: "${payload.slice(0, 50)}${payload.length > 50 ? '…' : ''}"`
+              )
+            } else {
+              ctx.transcript.sys('steer rejected')
+            }
+          })
+        )
+        .catch(ctx.guardedErr)
     }
   },
 

@@ -268,12 +268,6 @@ class SlackAdapter(BasePlatformAdapter):
         async def handle_app_mention(event, say):
             pass
 
-        # Register slash command handler
-        @app.command("/hermes")
-        async def handle_hermes_command(ack, command):
-            await ack()
-            await self._handle_slash_command(command)
-
         @app.event("assistant_thread_started")
         async def handle_assistant_thread_started(event, say):
             await self._handle_assistant_thread_lifecycle_event(event)
@@ -281,6 +275,12 @@ class SlackAdapter(BasePlatformAdapter):
         @app.event("assistant_thread_context_changed")
         async def handle_assistant_thread_context_changed(event, say):
             await self._handle_assistant_thread_lifecycle_event(event)
+
+        # Register slash command handler
+        @app.command("/hermes")
+        async def handle_hermes_command(ack, command):
+            await ack()
+            await self._handle_slash_command(command)
 
         # Register Block Kit action handlers for approval buttons
         for _action_id in (
@@ -552,6 +552,8 @@ class SlackAdapter(BasePlatformAdapter):
         chat_id: str,
         message_id: str,
         content: str,
+        *,
+        finalize: bool = False,
     ) -> SendResult:
         """Edit a previously sent Slack message."""
         if not self._app:
@@ -1826,11 +1828,9 @@ class SlackAdapter(BasePlatformAdapter):
 
     async def _download_slack_file(self, url: str, ext: str, audio: bool = False, team_id: str = "") -> str:
         """Download a Slack file using the bot token for auth, with retry."""
-        import asyncio
         import httpx
 
         bot_token = self._team_clients[team_id].token if team_id and team_id in self._team_clients else self.config.token
-        last_exc = None
 
         async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
             for attempt in range(3):
@@ -1860,7 +1860,6 @@ class SlackAdapter(BasePlatformAdapter):
                         from gateway.platforms.base import cache_image_from_bytes
                         return cache_image_from_bytes(response.content, ext)
                 except (httpx.TimeoutException, httpx.HTTPStatusError) as exc:
-                    last_exc = exc
                     if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code < 429:
                         raise
                     if attempt < 2:
@@ -1869,15 +1868,12 @@ class SlackAdapter(BasePlatformAdapter):
                         await asyncio.sleep(1.5 * (attempt + 1))
                         continue
                     raise
-        raise last_exc
 
     async def _download_slack_file_bytes(self, url: str, team_id: str = "") -> bytes:
         """Download a Slack file and return raw bytes, with retry."""
-        import asyncio
         import httpx
 
         bot_token = self._team_clients[team_id].token if team_id and team_id in self._team_clients else self.config.token
-        last_exc = None
 
         async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
             for attempt in range(3):
@@ -1889,7 +1885,6 @@ class SlackAdapter(BasePlatformAdapter):
                     response.raise_for_status()
                     return response.content
                 except (httpx.TimeoutException, httpx.HTTPStatusError) as exc:
-                    last_exc = exc
                     if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code < 429:
                         raise
                     if attempt < 2:
@@ -1898,7 +1893,6 @@ class SlackAdapter(BasePlatformAdapter):
                         await asyncio.sleep(1.5 * (attempt + 1))
                         continue
                     raise
-        raise last_exc
 
     # ── Channel mention gating ─────────────────────────────────────────────
 
