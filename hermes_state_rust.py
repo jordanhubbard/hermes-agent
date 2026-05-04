@@ -3,16 +3,35 @@
 This module is a migration aid.  Production Hermes still uses
 ``hermes_state.SessionDB``; tests can import ``RustSessionDB`` to exercise the
 Rust ``SessionStore`` through the JSON probe without changing runtime behavior.
+
+Two boundary modes are supported:
+
+* ``"subprocess"`` (default) — every operation invokes
+  ``cargo run --bin hermes_state_probe``. Slow per-op but requires no
+  long-lived state. Used by the parity test suite.
+* ``"daemon"`` — autospawns ``hermes_state_daemon`` once and talks to
+  it over a Unix socket using length-prefixed JSON. This is the
+  production boundary tracked by bead hermes-izz.1.
+
+Boundary is picked via the ``boundary=`` constructor arg, the
+``HERMES_STATE_BOUNDARY`` env var (``daemon`` / ``subprocess``), or the
+default. Failures in daemon mode raise ``RustStateBackendError``; the
+``hermes_state_factory`` layer above is responsible for the higher-level
+fallback to Python.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
 import shutil
+import socket
 import sqlite3
+import struct
 import subprocess
+import tempfile
 import threading
 import time
 from pathlib import Path
@@ -26,9 +45,219 @@ logger = logging.getLogger(__name__)
 DEFAULT_DB_PATH = get_hermes_home() / "state.db"
 REPO_ROOT = Path(__file__).resolve().parent
 
+VALID_BOUNDARIES = ("subprocess", "daemon")
+BOUNDARY_ENV = "HERMES_STATE_BOUNDARY"
+DAEMON_BIN_ENV = "HERMES_STATE_DAEMON_BIN"
+DAEMON_IDLE_TIMEOUT_SECS = 300
+DAEMON_CONNECT_TIMEOUT_SECS = 5.0
+DAEMON_OP_TIMEOUT_SECS = 60.0
+_FRAME_HEADER = struct.Struct(">I")
+
 
 class RustStateBackendError(RuntimeError):
     """Raised when the Rust state probe cannot complete an operation."""
+
+
+class _DaemonClient:
+    """Manages one daemon process + connection per database path.
+
+    Thread-safe: each call to ``run_operations`` acquires an instance
+    lock, so concurrent callers serialize through one socket. The daemon
+    side processes one request at a time anyway (one SQLite writer), so
+    multiplexing on the client side has no benefit.
+    """
+
+    def __init__(
+        self,
+        db_path: Path,
+        daemon_bin: Path,
+        *,
+        idle_timeout_secs: int = DAEMON_IDLE_TIMEOUT_SECS,
+    ):
+        self.db_path = db_path
+        self.daemon_bin = daemon_bin
+        self.socket_path = _socket_path_for(db_path)
+        self.idle_timeout_secs = idle_timeout_secs
+        self._lock = threading.RLock()
+        self._sock: Optional[socket.socket] = None
+        self._proc: Optional[subprocess.Popen] = None
+
+    def run_operations(self, ops: List[Dict[str, Any]]) -> List[Any]:
+        with self._lock:
+            try:
+                self._ensure_connected()
+                return self._send_recv(ops)
+            except (BrokenPipeError, ConnectionResetError):
+                # Daemon closed the connection (e.g. idle shutdown raced
+                # us). One reconnect attempt is enough — if it fails too,
+                # surface the error.
+                self._close_socket()
+                self._ensure_connected()
+                return self._send_recv(ops)
+
+    def close(self) -> None:
+        with self._lock:
+            self._close_socket()
+
+    def _close_socket(self) -> None:
+        if self._sock is not None:
+            try:
+                self._sock.close()
+            except OSError:
+                pass
+            self._sock = None
+
+    def _ensure_connected(self) -> None:
+        if self._sock is not None:
+            return
+        if self.socket_path.exists():
+            try:
+                self._sock = self._connect_socket()
+                return
+            except OSError:
+                self._sock = None
+        self._spawn_daemon()
+        deadline = time.monotonic() + DAEMON_CONNECT_TIMEOUT_SECS
+        last_err: Optional[BaseException] = None
+        while time.monotonic() < deadline:
+            if self.socket_path.exists():
+                try:
+                    self._sock = self._connect_socket()
+                    return
+                except OSError as err:
+                    last_err = err
+            time.sleep(0.02)
+        raise RustStateBackendError(
+            f"daemon socket {self.socket_path} did not become connectable: {last_err}"
+        )
+
+    def _connect_socket(self) -> socket.socket:
+        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        sock.settimeout(DAEMON_OP_TIMEOUT_SECS)
+        sock.connect(str(self.socket_path))
+        return sock
+
+    def _spawn_daemon(self) -> None:
+        if not self.daemon_bin.exists():
+            raise RustStateBackendError(
+                f"daemon binary not found at {self.daemon_bin}"
+            )
+        self._proc = subprocess.Popen(
+            [
+                str(self.daemon_bin),
+                str(self.socket_path),
+                str(self.db_path),
+                str(self.idle_timeout_secs),
+            ],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            close_fds=True,
+        )
+
+    def _send_recv(self, ops: List[Dict[str, Any]]) -> List[Any]:
+        if self._sock is None:
+            raise RustStateBackendError("daemon socket is not connected")
+        body = json.dumps(ops).encode("utf-8")
+        self._sock.sendall(_FRAME_HEADER.pack(len(body)) + body)
+        header = self._read_exact(4)
+        (resp_len,) = _FRAME_HEADER.unpack(header)
+        if resp_len > 64 * 1024 * 1024:
+            raise RustStateBackendError(
+                f"daemon response frame too large: {resp_len} bytes"
+            )
+        payload = self._read_exact(resp_len)
+        try:
+            response = json.loads(payload)
+        except json.JSONDecodeError as exc:
+            raise RustStateBackendError(
+                f"daemon returned invalid JSON: {payload!r}"
+            ) from exc
+        if not isinstance(response, dict) or not response.get("ok"):
+            error = (
+                response.get("error")
+                if isinstance(response, dict)
+                else "unknown daemon error"
+            )
+            raise RustStateBackendError(str(error))
+        return list(response.get("results") or [])
+
+    def _read_exact(self, n: int) -> bytes:
+        if self._sock is None:
+            raise RustStateBackendError("daemon socket is not connected")
+        chunks: List[bytes] = []
+        remaining = n
+        while remaining > 0:
+            chunk = self._sock.recv(remaining)
+            if not chunk:
+                raise RustStateBackendError(
+                    "daemon connection closed mid-frame"
+                )
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        return b"".join(chunks)
+
+
+# Unix domain socket path length is bounded by sun_path: 104 bytes on
+# macOS, 108 on Linux. Long HERMES_HOME paths (or pytest tmp paths
+# under /private/var/folders/...) blow that budget if the socket lives
+# next to state.db. We deterministically hash the absolute db path and
+# put the socket under TMPDIR so different processes targeting the same
+# db converge on the same socket.
+_SUN_PATH_LIMIT = 100  # leave slack for TMPDIR + the hashed name
+
+
+def _socket_path_for(db_path: Path) -> Path:
+    digest = hashlib.sha1(
+        str(db_path.resolve()).encode("utf-8"), usedforsecurity=False
+    ).hexdigest()[:12]
+    name = f"hermes-state-{digest}.sock"
+    candidate = Path(tempfile.gettempdir()) / name
+    if len(str(candidate).encode("utf-8")) > _SUN_PATH_LIMIT:
+        candidate = Path("/tmp") / name
+    return candidate
+
+
+def _resolve_boundary(boundary: Optional[str]) -> str:
+    selected = (boundary or os.getenv(BOUNDARY_ENV) or "subprocess").lower()
+    if selected not in VALID_BOUNDARIES:
+        raise RustStateBackendError(
+            f"unsupported boundary {selected!r}; valid: {VALID_BOUNDARIES}"
+        )
+    return selected
+
+
+def _resolve_daemon_bin() -> Path:
+    """Locate hermes_state_daemon, building it on demand if necessary."""
+    override = os.getenv(DAEMON_BIN_ENV)
+    if override:
+        return Path(override)
+    target_dir = REPO_ROOT / "target"
+    for profile in ("release", "debug"):
+        candidate = target_dir / profile / "hermes_state_daemon"
+        if candidate.exists():
+            return candidate
+    cargo = shutil.which("cargo")
+    if not cargo:
+        raise RustStateBackendError(
+            "cargo not on PATH; cannot build hermes_state_daemon"
+        )
+    result = subprocess.run(
+        [cargo, "build", "--quiet", "-p", "hermes-state", "--bin", "hermes_state_daemon"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise RustStateBackendError(
+            f"failed to build hermes_state_daemon: {result.stderr.strip()}"
+        )
+    candidate = target_dir / "debug" / "hermes_state_daemon"
+    if not candidate.exists():
+        raise RustStateBackendError(
+            f"daemon build succeeded but binary not at {candidate}"
+        )
+    return candidate
 
 
 class RustSessionDB:
@@ -46,6 +275,8 @@ class RustSessionDB:
         *,
         cargo: str | None = None,
         repo_root: Path | str | None = None,
+        boundary: Optional[str] = None,
+        daemon_bin: Path | str | None = None,
     ):
         self.db_path = Path(db_path or DEFAULT_DB_PATH)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -53,6 +284,13 @@ class RustSessionDB:
         self.cargo = cargo or shutil.which("cargo")
         if not self.cargo:
             raise RustStateBackendError("cargo is required for RustSessionDB")
+        self.boundary = _resolve_boundary(boundary)
+        self._daemon: Optional[_DaemonClient] = None
+        if self.boundary == "daemon":
+            bin_path = (
+                Path(daemon_bin) if daemon_bin is not None else _resolve_daemon_bin()
+            )
+            self._daemon = _DaemonClient(self.db_path, bin_path)
         self._op_count = 0
         self._error_count = 0
         self._last_error: Optional[str] = None
@@ -67,10 +305,13 @@ class RustSessionDB:
         self._conn.execute("PRAGMA foreign_keys=ON")
 
     def close(self) -> None:
-        """Mirror SessionDB.close(); the subprocess boundary is per operation."""
+        """Mirror SessionDB.close(); release any daemon connection too."""
         if hasattr(self, "_conn") and self._conn is not None:
             self._conn.close()
             self._conn = None
+        if getattr(self, "_daemon", None) is not None:
+            self._daemon.close()
+            self._daemon = None
 
     def diagnostics(self) -> Dict[str, Any]:
         """Return a snapshot of adapter health for /status surfaces.
@@ -79,7 +320,9 @@ class RustSessionDB:
         """
         return {
             "backend": "rust",
-            "boundary": "cargo-subprocess",
+            "boundary": (
+                "daemon" if self.boundary == "daemon" else "cargo-subprocess"
+            ),
             "db_path": str(self.db_path),
             "schema_version": self._schema_version,
             "op_count": self._op_count,
@@ -95,9 +338,21 @@ class RustSessionDB:
             self._conn.commit()
         op_names = [op.get("op", "?") for op in operations]
         self._op_count += len(operations)
-        logger.debug(
-            "rust state probe: ops=%s db=%s", op_names, self.db_path
-        )
+        prepared = [_drop_none(op) for op in operations]
+        if self.boundary == "daemon" and self._daemon is not None:
+            logger.debug("rust state daemon: ops=%s db=%s", op_names, self.db_path)
+            try:
+                return self._daemon.run_operations(prepared)
+            except RustStateBackendError as exc:
+                self._error_count += 1
+                self._last_error = str(exc)
+                logger.warning(
+                    "rust state daemon failed: ops=%s detail=%s",
+                    op_names,
+                    self._last_error,
+                )
+                raise
+        logger.debug("rust state probe: ops=%s db=%s", op_names, self.db_path)
         try:
             result = subprocess.run(
                 [
@@ -113,7 +368,7 @@ class RustSessionDB:
                     str(self.db_path),
                 ],
                 cwd=self.repo_root,
-                input=json.dumps([_drop_none(operation) for operation in operations]),
+                input=json.dumps(prepared),
                 text=True,
                 capture_output=True,
                 check=False,

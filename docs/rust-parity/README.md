@@ -23,9 +23,9 @@ Tracks the migration of Hermes subsystems from Python to Rust. Source of truth: 
 | Status | Count | Share |
 | --- | ---: | ---: |
 | `planned` | 23 | 72% |
-| `in_progress` | 5 | 16% |
+| `in_progress` | 4 | 12% |
 | `ported` | 0 | 0% |
-| `tested` | 4 | 12% |
+| `tested` | 5 | 16% |
 | `production_wired` | 0 | 0% |
 | `default` | 0 | 0% |
 | `deferred` | 0 | 0% |
@@ -127,8 +127,8 @@ Replace the cargo-subprocess probe with a real production boundary.
 
 | Bead | Story | Status | Python | Rust target | CI gate |
 | --- | --- | --- | --- | --- | --- |
-| `hermes-izz.1` | Replace subprocess probe with a production Rust boundary | `in_progress` | `hermes_state_rust.py` | `crates/hermes-state/src/bin/hermes_state_daemon.rs (planned)` | `tests/rust/test_hermes_state_full_parity.py` |
-| | _Design landed in docs/rust-parity/izz1-production-boundary.md (standalone daemon over Unix socket; PyO3 ruled out per the no-link-to-in-repo-Python constraint). Implementation pending._ |  |  |  |  |
+| `hermes-izz.1` | Replace subprocess probe with a production Rust boundary | `tested` | `hermes_state_rust.py` | `crates/hermes-state/src/bin/hermes_state_daemon.rs` | `cargo test -p hermes-state --test daemon + tests/parity/state/test_daemon_mode.py` |
+| | _Standalone daemon binary listening on a Unix socket using length-prefixed JSON. Op handling is shared with the probe via crates/hermes-state/src/ops.rs so they cannot drift. RustSessionDB(boundary="daemon") autospawns the daemon, connects, and routes ops over the socket; HERMES_STATE_BOUNDARY env var honored. Subprocess boundary remains the default for back-compat. Idle daemon shuts down after 5 min by default._ |  |  |  |  |
 | `hermes-izz.2` | Match SessionDB write contention and WAL behavior | `planned` | `hermes_state.py` | `crates/hermes-state` | `tests/parity/state/test_contention.py` |
 | | _WAL, retry-with-jitter, busy_timeout — must match Python under contention._ |  |  |  |  |
 | `hermes-izz.3` | State backend observability and rollback diagnostics | `in_progress` | `hermes_state_rust.py`<br>`hermes_state_factory.py` | `crates/hermes-state` | `tests/parity/state/test_diagnostics.py` |

@@ -5,6 +5,7 @@
 //! that can be tested independently and reused by a future Rust-backed session
 //! database implementation.
 
+pub mod ops;
 pub mod schema;
 pub mod search;
 pub mod store;

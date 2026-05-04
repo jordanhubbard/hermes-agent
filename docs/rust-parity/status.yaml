@@ -291,10 +291,10 @@ epics:
         story: Replace subprocess probe with a production Rust boundary
         python_paths:
           - hermes_state_rust.py
-        rust_target: crates/hermes-state/src/bin/hermes_state_daemon.rs (planned)
-        status: in_progress
-        ci_gate: tests/rust/test_hermes_state_full_parity.py
-        notes: Design landed in docs/rust-parity/izz1-production-boundary.md (standalone daemon over Unix socket; PyO3 ruled out per the no-link-to-in-repo-Python constraint). Implementation pending.
+        rust_target: crates/hermes-state/src/bin/hermes_state_daemon.rs
+        status: tested
+        ci_gate: cargo test -p hermes-state --test daemon + tests/parity/state/test_daemon_mode.py
+        notes: Standalone daemon binary listening on a Unix socket using length-prefixed JSON. Op handling is shared with the probe via crates/hermes-state/src/ops.rs so they cannot drift. RustSessionDB(boundary="daemon") autospawns the daemon, connects, and routes ops over the socket; HERMES_STATE_BOUNDARY env var honored. Subprocess boundary remains the default for back-compat. Idle daemon shuts down after 5 min by default.
       - bead: hermes-izz.2
         story: Match SessionDB write contention and WAL behavior
         python_paths:
