@@ -188,10 +188,10 @@ epics:
         python_paths:
           - .github/workflows/tests.yml
           - scripts/run_tests.sh
-        rust_target: .github/workflows/tests.yml (cargo + parity job)
-        status: planned
-        ci_gate: GitHub Actions tests.yml
-        notes: Add cargo test, Rust parity suite, and HERMES_STATE_BACKEND=rust smoke jobs.
+        rust_target: .github/workflows/tests.yml (rust job)
+        status: tested
+        ci_gate: GitHub Actions tests.yml — rust job
+        notes: Added a `rust` job that installs the stable Rust toolchain, runs `cargo test --workspace`, runs tests/rust/ + tests/parity/state/test_diagnostics.py (which need cargo), and runs the parity fixtures and matrix lint. Mandatory CI status (must-pass) is gated by hermes-te4.4.
       - bead: hermes-ni1.4
         story: Document cutover, rollback, and default-backend criteria
         python_paths:

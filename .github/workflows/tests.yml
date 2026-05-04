@@ -80,3 +80,62 @@ jobs:
           OPENROUTER_API_KEY: ""
           OPENAI_API_KEY: ""
           NOUS_API_KEY: ""
+
+  # Rust workspace tests + Python adapter parity tests that require cargo.
+  # Tracked by bead hermes-ni1.3 (CI matrix for Python, Rust, and mixed-backend
+  # modes). The `test` job above already covers pure-Python parity fixtures;
+  # this job adds cargo test + tests/rust/ + tests/parity/state/test_diagnostics
+  # so the Rust state crate cannot regress silently.
+  rust:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y ripgrep
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86  # v5
+
+      - name: Set up Python 3.11
+        run: uv python install 3.11
+
+      - name: Verify or install Rust toolchain
+        run: |
+          if ! command -v cargo >/dev/null 2>&1; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+              | sh -s -- -y --default-toolchain stable --profile minimal
+            echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          fi
+          rustc --version
+          cargo --version
+
+      - name: Install Python dependencies
+        run: |
+          uv venv .venv --python 3.11
+          source .venv/bin/activate
+          uv pip install -e ".[all,dev]"
+
+      - name: cargo test (workspace)
+        run: cargo test --workspace --quiet
+
+      - name: Rust adapter parity tests
+        run: |
+          source .venv/bin/activate
+          python -m pytest tests/rust/ tests/parity/state/test_diagnostics.py \
+            -v --tb=short
+        env:
+          OPENROUTER_API_KEY: ""
+          OPENAI_API_KEY: ""
+          NOUS_API_KEY: ""
+
+      - name: Parity fixtures and matrix lint
+        run: |
+          source .venv/bin/activate
+          python -m pytest tests/parity/ -q --tb=short
+        env:
+          OPENROUTER_API_KEY: ""
+          OPENAI_API_KEY: ""
+          NOUS_API_KEY: ""

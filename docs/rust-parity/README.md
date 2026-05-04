@@ -22,10 +22,10 @@ Tracks the migration of Hermes subsystems from Python to Rust. Source of truth: 
 
 | Status | Count | Share |
 | --- | ---: | ---: |
-| `planned` | 26 | 81% |
+| `planned` | 25 | 78% |
 | `in_progress` | 4 | 12% |
 | `ported` | 0 | 0% |
-| `tested` | 2 | 6% |
+| `tested` | 3 | 9% |
 | `production_wired` | 0 | 0% |
 | `default` | 0 | 0% |
 | `deferred` | 0 | 0% |
@@ -86,8 +86,8 @@ Golden parity gates, CI matrix, rollout controls, and cutover criteria.
 | | _This file is the matrix. Renderer also runs as a CI lint._ |  |  |  |  |
 | `hermes-ni1.2` | Build golden transcript and tool-call fixtures | `in_progress` | `tests/parity/fixtures/`<br>`tests/parity/test_python_parity.py` | `tests/parity/test_rust_parity.py (skeleton)` | `tests/parity/` |
 | | _Backend-agnostic JSON fixtures + Python loader. Rust loader follows hermes-1oa._ |  |  |  |  |
-| `hermes-ni1.3` | Add CI matrix for Python, Rust, and mixed-backend modes | `planned` | `.github/workflows/tests.yml`<br>`scripts/run_tests.sh` | `.github/workflows/tests.yml (cargo + parity job)` | `GitHub Actions tests.yml` |
-| | _Add cargo test, Rust parity suite, and HERMES_STATE_BACKEND=rust smoke jobs._ |  |  |  |  |
+| `hermes-ni1.3` | Add CI matrix for Python, Rust, and mixed-backend modes | `tested` | `.github/workflows/tests.yml`<br>`scripts/run_tests.sh` | `.github/workflows/tests.yml (rust job)` | `GitHub Actions tests.yml — rust job` |
+| | _Added a `rust` job that installs the stable Rust toolchain, runs `cargo test --workspace`, runs tests/rust/ + tests/parity/state/test_diagnostics.py (which need cargo), and runs the parity fixtures and matrix lint. Mandatory CI status (must-pass) is gated by hermes-te4.4._ |  |  |  |  |
 | `hermes-ni1.4` | Document cutover, rollback, and default-backend criteria | `planned` | `docs/rust-parity/cutover.md (planned)` | `n/a (docs)` | `docs lint` |
 | | _Per-subsystem parity gates, perf gates, data compat, rollout flags, rollback._ |  |  |  |  |
 
