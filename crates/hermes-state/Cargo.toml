@@ -1,0 +1,16 @@
+[package]
+name = "hermes-state"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.70"
+description = "Rust state-store primitives for Hermes Agent"
+license = "MIT"
+
+[dependencies]
+regex = "1.11"
+rusqlite = { version = "0.32", features = ["bundled"] }
+serde = "1.0"
+serde_json = "1.0"
+
+[dev-dependencies]
+tempfile = "3.13"
