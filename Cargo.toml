@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "crates/hermes-state",
+    "crates/hermes-agent-core",
 ]
 resolver = "2"
 

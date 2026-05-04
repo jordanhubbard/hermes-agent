@@ -45,10 +45,10 @@ epics:
           - run_agent.py
           - agent/model_metadata.py
           - agent/credential_pool.py
-        rust_target: crates/hermes-agent-core (planned)
-        status: planned
-        ci_gate: tests/parity/agent_core (skipped until ported)
-        notes: Messages, tool calls, reasoning fields, budgets, interrupts, provider options.
+        rust_target: crates/hermes-agent-core
+        status: in_progress
+        ci_gate: cargo test -p hermes-agent-core (workspace job)
+        notes: Initial scaffolding — Message/Role/AssistantTurn/ToolTurn, ToolCall, ToolResult, ToolDefinition, ToolFunction. Round-trips parity-fixture JSON. Pending against full acceptance criteria, expanded in subsequent ticks - budget/token state, compression metadata, provider routing inputs, interrupt and conversation outcome types.
       - bead: hermes-1oa.2
         story: Port the AIAgent conversation loop
         python_paths:
