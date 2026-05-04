@@ -8,6 +8,7 @@ Rust ``SessionStore`` through the JSON probe without changing runtime behavior.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import shutil
 import sqlite3
@@ -19,6 +20,8 @@ from typing import Any, Dict, List, Optional
 
 from hermes_constants import get_hermes_home
 
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_DB_PATH = get_hermes_home() / "state.db"
 REPO_ROOT = Path(__file__).resolve().parent
@@ -50,7 +53,10 @@ class RustSessionDB:
         self.cargo = cargo or shutil.which("cargo")
         if not self.cargo:
             raise RustStateBackendError("cargo is required for RustSessionDB")
-        self._run_operation({"op": "schema_version"})
+        self._op_count = 0
+        self._error_count = 0
+        self._last_error: Optional[str] = None
+        self._schema_version = self._run_operation({"op": "schema_version"})
         self._lock = threading.RLock()
         self._conn = sqlite3.connect(
             str(self.db_path),
@@ -66,40 +72,80 @@ class RustSessionDB:
             self._conn.close()
             self._conn = None
 
+    def diagnostics(self) -> Dict[str, Any]:
+        """Return a snapshot of adapter health for /status surfaces.
+
+        Tracked by bead hermes-izz.3 (state backend observability).
+        """
+        return {
+            "backend": "rust",
+            "boundary": "cargo-subprocess",
+            "db_path": str(self.db_path),
+            "schema_version": self._schema_version,
+            "op_count": self._op_count,
+            "error_count": self._error_count,
+            "last_error": self._last_error,
+        }
+
     def _run_operation(self, operation: Dict[str, Any]) -> Any:
         return self._run_operations([operation])[0]
 
     def _run_operations(self, operations: List[Dict[str, Any]]) -> List[Any]:
         if getattr(self, "_conn", None) is not None:
             self._conn.commit()
-        result = subprocess.run(
-            [
-                self.cargo,
-                "run",
-                "--quiet",
-                "-p",
-                "hermes-state",
-                "--bin",
-                "hermes_state_probe",
-                "--",
-                "run-json",
-                str(self.db_path),
-            ],
-            cwd=self.repo_root,
-            input=json.dumps([_drop_none(operation) for operation in operations]),
-            text=True,
-            capture_output=True,
-            check=False,
+        op_names = [op.get("op", "?") for op in operations]
+        self._op_count += len(operations)
+        logger.debug(
+            "rust state probe: ops=%s db=%s", op_names, self.db_path
         )
+        try:
+            result = subprocess.run(
+                [
+                    self.cargo,
+                    "run",
+                    "--quiet",
+                    "-p",
+                    "hermes-state",
+                    "--bin",
+                    "hermes_state_probe",
+                    "--",
+                    "run-json",
+                    str(self.db_path),
+                ],
+                cwd=self.repo_root,
+                input=json.dumps([_drop_none(operation) for operation in operations]),
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+        except (FileNotFoundError, OSError) as exc:
+            self._error_count += 1
+            self._last_error = f"failed to invoke cargo at {self.cargo!r}: {exc}"
+            logger.warning(
+                "rust state probe could not start: ops=%s detail=%s",
+                op_names,
+                self._last_error,
+            )
+            raise RustStateBackendError(self._last_error) from exc
         if result.returncode != 0:
             detail = result.stderr.strip() or result.stdout.strip()
-            raise RustStateBackendError(detail or "Rust state probe failed")
+            self._error_count += 1
+            self._last_error = detail or "Rust state probe failed"
+            logger.warning(
+                "rust state probe failed: ops=%s rc=%s detail=%s",
+                op_names,
+                result.returncode,
+                self._last_error,
+            )
+            raise RustStateBackendError(self._last_error)
         try:
             return json.loads(result.stdout)
         except json.JSONDecodeError as exc:
-            raise RustStateBackendError(
+            self._error_count += 1
+            self._last_error = (
                 f"Rust state probe returned invalid JSON: {result.stdout!r}"
-            ) from exc
+            )
+            raise RustStateBackendError(self._last_error) from exc
 
     def create_session(self, session_id: str, source: str, **kwargs) -> str:
         operation = {

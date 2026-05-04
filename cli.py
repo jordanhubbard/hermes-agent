@@ -2232,8 +2232,8 @@ class HermesCLI:
         # Initialize SQLite session store early so /title works before first message
         self._session_db = None
         try:
-            from hermes_state import SessionDB
-            self._session_db = SessionDB()
+            from hermes_state_factory import get_session_db
+            self._session_db = get_session_db()
         except Exception as e:
             logger.warning("Failed to initialize SessionDB — session will NOT be indexed for search: %s", e)
 
@@ -3528,8 +3528,8 @@ class HermesCLI:
         # Initialize SQLite session store for CLI sessions (if not already done in __init__)
         if self._session_db is None:
             try:
-                from hermes_state import SessionDB
-                self._session_db = SessionDB()
+                from hermes_state_factory import get_session_db
+                self._session_db = get_session_db()
             except Exception as e:
                 logger.warning("SQLite session store not available — session will NOT be indexed: %s", e)
         
@@ -7783,10 +7783,10 @@ class HermesCLI:
                 i += 1
 
         try:
-            from hermes_state import SessionDB
+            from hermes_state_factory import get_session_db
             from agent.insights import InsightsEngine
 
-            db = SessionDB()
+            db = get_session_db()
             engine = InsightsEngine(db)
             report = engine.generate(days=days, source=source)
             print(engine.format_terminal(report))

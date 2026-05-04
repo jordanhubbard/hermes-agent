@@ -142,7 +142,7 @@ def _get_session_db() -> Optional[Any]:
     """
     try:
         from hermes_constants import get_hermes_home
-        from hermes_state import SessionDB
+        from hermes_state_factory import get_session_db
 
         home = str(get_hermes_home())
     except Exception as exc:  # pragma: no cover
@@ -153,7 +153,7 @@ def _get_session_db() -> Optional[Any]:
     if cached is not None:
         return cached
     try:
-        db = SessionDB()
+        db = get_session_db()
     except Exception as exc:  # pragma: no cover
         logger.debug("GoalManager: SessionDB() raised (%s)", exc)
         return None

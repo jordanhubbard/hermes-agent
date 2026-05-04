@@ -592,8 +592,8 @@ async def get_status():
 
     active_sessions = 0
     try:
-        from hermes_state import SessionDB
-        db = SessionDB()
+        from hermes_state_factory import get_session_db
+        db = get_session_db()
         try:
             sessions = db.list_sessions_rich(limit=50)
             now = time.time()
@@ -761,8 +761,8 @@ async def get_action_status(name: str, lines: int = 200):
 @app.get("/api/sessions")
 async def get_sessions(limit: int = 20, offset: int = 0):
     try:
-        from hermes_state import SessionDB
-        db = SessionDB()
+        from hermes_state_factory import get_session_db
+        db = get_session_db()
         try:
             sessions = db.list_sessions_rich(limit=limit, offset=offset)
             total = db.session_count()
@@ -786,8 +786,8 @@ async def search_sessions(q: str = "", limit: int = 20):
     if not q or not q.strip():
         return {"results": []}
     try:
-        from hermes_state import SessionDB
-        db = SessionDB()
+        from hermes_state_factory import get_session_db
+        db = get_session_db()
         try:
             # Auto-add prefix wildcards so partial words match
             # e.g. "nimb" → "nimb*" matches "nimby"
@@ -2175,8 +2175,8 @@ async def cancel_oauth_session(session_id: str, request: Request):
 
 @app.get("/api/sessions/{session_id}")
 async def get_session_detail(session_id: str):
-    from hermes_state import SessionDB
-    db = SessionDB()
+    from hermes_state_factory import get_session_db
+    db = get_session_db()
     try:
         sid = db.resolve_session_id(session_id)
         session = db.get_session(sid) if sid else None
@@ -2189,8 +2189,8 @@ async def get_session_detail(session_id: str):
 
 @app.get("/api/sessions/{session_id}/messages")
 async def get_session_messages(session_id: str):
-    from hermes_state import SessionDB
-    db = SessionDB()
+    from hermes_state_factory import get_session_db
+    db = get_session_db()
     try:
         sid = db.resolve_session_id(session_id)
         if not sid:
@@ -2203,8 +2203,8 @@ async def get_session_messages(session_id: str):
 
 @app.delete("/api/sessions/{session_id}")
 async def delete_session_endpoint(session_id: str):
-    from hermes_state import SessionDB
-    db = SessionDB()
+    from hermes_state_factory import get_session_db
+    db = get_session_db()
     try:
         if not db.delete_session(session_id):
             raise HTTPException(status_code=404, detail="Session not found")
@@ -2709,10 +2709,10 @@ async def update_config_raw(body: RawConfigUpdate):
 
 @app.get("/api/analytics/usage")
 async def get_usage_analytics(days: int = 30):
-    from hermes_state import SessionDB
+    from hermes_state_factory import get_session_db
     from agent.insights import InsightsEngine
 
-    db = SessionDB()
+    db = get_session_db()
     try:
         cutoff = time.time() - (days * 86400)
         cur = db._conn.execute("""
@@ -2783,9 +2783,9 @@ async def get_models_analytics(days: int = 30):
     Returns token/cost/session breakdown per model plus capability metadata
     from models.dev (context window, vision, tools, reasoning, etc.).
     """
-    from hermes_state import SessionDB
+    from hermes_state_factory import get_session_db
 
-    db = SessionDB()
+    db = get_session_db()
     try:
         cutoff = time.time() - (days * 86400)
 

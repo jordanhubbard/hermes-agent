@@ -1,0 +1,22 @@
+{
+  "id": "plain_chat",
+  "description": "Single user message, model returns plain text, no tools.",
+  "inputs": {
+    "user_messages": ["What is the capital of France?"],
+    "tool_definitions": [],
+    "canned_model_responses": [
+      {"content": "The capital of France is Paris."}
+    ],
+    "canned_tool_results": {}
+  },
+  "expected": {
+    "turn_count": 1,
+    "tool_calls_dispatched": [],
+    "tool_results_persisted": [],
+    "final_message": {"role": "assistant", "content_contains": "Paris"},
+    "persisted_message_count": 2,
+    "persisted_roles": ["user", "assistant"],
+    "reasoning_fields_present": false,
+    "errors": []
+  }
+}

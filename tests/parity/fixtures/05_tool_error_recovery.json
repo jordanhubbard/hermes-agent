@@ -1,0 +1,46 @@
+{
+  "id": "tool_error_recovery",
+  "description": "Tool call fails; model receives error result and produces a recovery answer.",
+  "inputs": {
+    "user_messages": ["Read missing.txt and summarize it."],
+    "tool_definitions": [
+      {
+        "type": "function",
+        "function": {
+          "name": "read_file",
+          "parameters": {
+            "type": "object",
+            "properties": {"path": {"type": "string"}},
+            "required": ["path"]
+          }
+        }
+      }
+    ],
+    "canned_model_responses": [
+      {
+        "content": null,
+        "tool_calls": [
+          {"id": "call_1", "name": "read_file", "arguments": {"path": "missing.txt"}}
+        ]
+      },
+      {"content": "I could not read missing.txt: file not found. Please check the path."}
+    ],
+    "canned_tool_results": {
+      "call_1": {"ok": false, "content": "FileNotFoundError: missing.txt"}
+    }
+  },
+  "expected": {
+    "turn_count": 2,
+    "tool_calls_dispatched": [
+      {"name": "read_file", "argument_keys": ["path"]}
+    ],
+    "tool_results_persisted": [
+      {"call_id": "call_1", "ok": false}
+    ],
+    "final_message": {"role": "assistant", "content_contains": "missing.txt"},
+    "persisted_message_count": 4,
+    "persisted_roles": ["user", "assistant", "tool", "assistant"],
+    "reasoning_fields_present": false,
+    "errors": []
+  }
+}

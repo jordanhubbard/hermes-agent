@@ -615,9 +615,9 @@ def _resolve_last_session(source: str = "cli") -> Optional[str]:
     """Look up the most recently-used session ID for a source."""
     db = None
     try:
-        from hermes_state import SessionDB
+        from hermes_state_factory import get_session_db
 
-        db = SessionDB()
+        db = get_session_db()
         sessions = db.search_sessions(source=source, limit=1)
         return sessions[0]["id"] if sessions else None
     except Exception:
@@ -754,9 +754,9 @@ def _resolve_session_by_name_or_id(name_or_id: str) -> Optional[str]:
       resumed at the live tip instead of a stale parent with no messages.
     """
     try:
-        from hermes_state import SessionDB
+        from hermes_state_factory import get_session_db
 
-        db = SessionDB()
+        db = get_session_db()
 
         # Try as exact session ID first
         session = db.get_session(name_or_id)
@@ -801,9 +801,9 @@ def _print_tui_exit_summary(session_id: Optional[str], active_session_file: Opti
 
     db = None
     try:
-        from hermes_state import SessionDB
+        from hermes_state_factory import get_session_db
 
-        db = SessionDB()
+        db = get_session_db()
         session = db.get_session(target)
         if not session:
             return
@@ -9725,9 +9725,9 @@ Examples:
         import json as _json
 
         try:
-            from hermes_state import SessionDB
+            from hermes_state_factory import get_session_db
 
-            db = SessionDB()
+            db = get_session_db()
         except Exception as e:
             print(f"Error: Could not open session database: {e}")
             return
@@ -9903,10 +9903,10 @@ Examples:
 
     def cmd_insights(args):
         try:
-            from hermes_state import SessionDB
+            from hermes_state_factory import get_session_db
             from agent.insights import InsightsEngine
 
-            db = SessionDB()
+            db = get_session_db()
             engine = InsightsEngine(db)
             report = engine.generate(days=args.days, source=args.source)
             print(engine.format_terminal(report))

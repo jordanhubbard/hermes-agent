@@ -412,9 +412,9 @@ class SessionManager:
         if self._db_instance is not None:
             return self._db_instance
         try:
-            from hermes_state import SessionDB
+            from hermes_state_factory import get_session_db
             hermes_home = get_hermes_home()
-            self._db_instance = SessionDB(db_path=hermes_home / "state.db")
+            self._db_instance = get_session_db(db_path=hermes_home / "state.db")
             return self._db_instance
         except Exception:
             logger.debug("SessionDB unavailable for ACP persistence", exc_info=True)

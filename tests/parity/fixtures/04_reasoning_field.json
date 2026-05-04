@@ -1,0 +1,25 @@
+{
+  "id": "reasoning_field",
+  "description": "Provider returns a reasoning field alongside text content (Anthropic/Codex/DeepSeek style).",
+  "inputs": {
+    "user_messages": ["Solve: 17 * 23"],
+    "tool_definitions": [],
+    "canned_model_responses": [
+      {
+        "content": "17 * 23 = 391",
+        "reasoning": "17 * 23 = 17 * (20 + 3) = 340 + 51 = 391."
+      }
+    ],
+    "canned_tool_results": {}
+  },
+  "expected": {
+    "turn_count": 1,
+    "tool_calls_dispatched": [],
+    "tool_results_persisted": [],
+    "final_message": {"role": "assistant", "content_contains": "391"},
+    "persisted_message_count": 2,
+    "persisted_roles": ["user", "assistant"],
+    "reasoning_fields_present": true,
+    "errors": []
+  }
+}

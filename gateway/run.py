@@ -1137,8 +1137,8 @@ class GatewayRunner:
         # Initialize session database for session_search tool support
         self._session_db = None
         try:
-            from hermes_state import SessionDB
-            self._session_db = SessionDB()
+            from hermes_state_factory import get_session_db
+            self._session_db = get_session_db()
         except Exception as e:
             logger.debug("SQLite session store not available: %s", e)
 
@@ -9858,13 +9858,13 @@ class GatewayRunner:
                     i += 1
 
         try:
-            from hermes_state import SessionDB
+            from hermes_state_factory import get_session_db
             from agent.insights import InsightsEngine
 
             loop = asyncio.get_running_loop()
 
             def _run_insights():
-                db = SessionDB()
+                db = get_session_db()
                 engine = InsightsEngine(db)
                 report = engine.generate(days=days, source=source)
                 result = engine.format_gateway(report)
