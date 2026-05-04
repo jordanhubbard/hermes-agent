@@ -22,10 +22,10 @@ Tracks the migration of Hermes subsystems from Python to Rust. Source of truth: 
 
 | Status | Count | Share |
 | --- | ---: | ---: |
-| `planned` | 25 | 78% |
+| `planned` | 24 | 75% |
 | `in_progress` | 4 | 12% |
 | `ported` | 0 | 0% |
-| `tested` | 3 | 9% |
+| `tested` | 4 | 12% |
 | `production_wired` | 0 | 0% |
 | `default` | 0 | 0% |
 | `deferred` | 0 | 0% |
@@ -88,8 +88,8 @@ Golden parity gates, CI matrix, rollout controls, and cutover criteria.
 | | _Backend-agnostic JSON fixtures + Python loader. Rust loader follows hermes-1oa._ |  |  |  |  |
 | `hermes-ni1.3` | Add CI matrix for Python, Rust, and mixed-backend modes | `tested` | `.github/workflows/tests.yml`<br>`scripts/run_tests.sh` | `.github/workflows/tests.yml (rust job)` | `GitHub Actions tests.yml — rust job` |
 | | _Added a `rust` job that installs the stable Rust toolchain, runs `cargo test --workspace`, runs tests/rust/ + tests/parity/state/test_diagnostics.py (which need cargo), and runs the parity fixtures and matrix lint. Mandatory CI status (must-pass) is gated by hermes-te4.4._ |  |  |  |  |
-| `hermes-ni1.4` | Document cutover, rollback, and default-backend criteria | `planned` | `docs/rust-parity/cutover.md (planned)` | `n/a (docs)` | `docs lint` |
-| | _Per-subsystem parity gates, perf gates, data compat, rollout flags, rollback._ |  |  |  |  |
+| `hermes-ni1.4` | Document cutover, rollback, and default-backend criteria | `tested` | `docs/rust-parity/cutover.md` | `n/a (docs)` | `tests/parity/test_cutover_doc.py` |
+| | _docs/rust-parity/cutover.md covers all 8 required sections (parity gates, perf gates, data compat, rollout flags, rollback steps, known deferrals, owner sign-off, post-cutover monitoring). Structural lint fails CI if a required section is missing or renamed. "tested" here means the doc structure is CI-enforced; status maps imperfectly to docs work._ |  |  |  |  |
 
 ## hermes-3n2 — CLI and configuration surfaces
 

@@ -195,11 +195,11 @@ epics:
       - bead: hermes-ni1.4
         story: Document cutover, rollback, and default-backend criteria
         python_paths:
-          - docs/rust-parity/cutover.md (planned)
+          - docs/rust-parity/cutover.md
         rust_target: n/a (docs)
-        status: planned
-        ci_gate: docs lint
-        notes: Per-subsystem parity gates, perf gates, data compat, rollout flags, rollback.
+        status: tested
+        ci_gate: tests/parity/test_cutover_doc.py
+        notes: docs/rust-parity/cutover.md covers all 8 required sections (parity gates, perf gates, data compat, rollout flags, rollback steps, known deferrals, owner sign-off, post-cutover monitoring). Structural lint fails CI if a required section is missing or renamed. "tested" here means the doc structure is CI-enforced; status maps imperfectly to docs work.
 
   - id: hermes-3n2
     name: CLI and configuration surfaces
