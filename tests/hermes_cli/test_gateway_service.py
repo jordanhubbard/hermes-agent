@@ -72,6 +72,7 @@ class TestSystemdServiceRefresh:
             return SimpleNamespace(returncode=0, stdout="", stderr="")
 
         monkeypatch.setattr(gateway_cli.subprocess, "run", fake_run)
+        monkeypatch.setattr(gateway_cli, "_preflight_user_systemd", lambda: None)
 
         gateway_cli.systemd_start()
 
@@ -95,6 +96,7 @@ class TestSystemdServiceRefresh:
             return SimpleNamespace(returncode=0, stdout="", stderr="")
 
         monkeypatch.setattr(gateway_cli.subprocess, "run", fake_run)
+        monkeypatch.setattr(gateway_cli, "_preflight_user_systemd", lambda: None)
 
         gateway_cli.systemd_restart()
 
@@ -127,11 +129,8 @@ class TestSystemdServiceRefresh:
         monkeypatch.setattr(gateway_cli.subprocess, "run", fake_run)
 
         # Prevent run_gateway from actually starting the gateway
-        def fake_start_gateway(**kwargs):
-            import asyncio
-            f = asyncio.Future()
-            f.set_result(True)
-            return f
+        async def fake_start_gateway(**kwargs):
+            return True
 
         monkeypatch.setattr("gateway.run.start_gateway", fake_start_gateway)
 
@@ -173,7 +172,7 @@ class TestGeneratedSystemdUnits:
         # TimeoutStopSec must exceed the default drain_timeout (60s) so
         # systemd doesn't SIGKILL the cgroup before post-interrupt cleanup
         # (tool subprocess kill, adapter disconnect) runs — issue #8202.
-        assert "TimeoutStopSec=90" in unit
+        assert f"TimeoutStopSec={int(DEFAULT_GATEWAY_RESTART_DRAIN_TIMEOUT) + 30}" in unit
 
     def test_user_unit_includes_resolved_node_directory_in_path(self, monkeypatch):
         monkeypatch.setattr(gateway_cli.shutil, "which", lambda cmd: "/home/test/.nvm/versions/node/v24.14.0/bin/node" if cmd == "node" else None)
@@ -192,7 +191,7 @@ class TestGeneratedSystemdUnits:
         # TimeoutStopSec must exceed the default drain_timeout (60s) so
         # systemd doesn't SIGKILL the cgroup before post-interrupt cleanup
         # (tool subprocess kill, adapter disconnect) runs — issue #8202.
-        assert "TimeoutStopSec=90" in unit
+        assert f"TimeoutStopSec={int(DEFAULT_GATEWAY_RESTART_DRAIN_TIMEOUT) + 30}" in unit
         assert "WantedBy=multi-user.target" in unit
 
 
@@ -544,6 +543,7 @@ class TestGatewaySystemServiceRouting:
         monkeypatch.setattr(gateway_cli, "_select_systemd_scope", lambda system=False: False)
         monkeypatch.setattr(gateway_cli, "_require_service_installed", lambda action, system=False: None)
         monkeypatch.setattr(gateway_cli, "refresh_systemd_unit_if_needed", lambda system=False: calls.append(("refresh", system)))
+        monkeypatch.setattr(gateway_cli, "_preflight_user_systemd", lambda: None)
         monkeypatch.setattr(
             "gateway.status.get_running_pid",
             lambda: 654,
@@ -599,6 +599,7 @@ class TestGatewaySystemServiceRouting:
         monkeypatch.setattr(gateway_cli, "_select_systemd_scope", lambda system=False: False)
         monkeypatch.setattr(gateway_cli, "_require_service_installed", lambda action, system=False: None)
         monkeypatch.setattr(gateway_cli, "refresh_systemd_unit_if_needed", lambda system=False: None)
+        monkeypatch.setattr(gateway_cli, "_preflight_user_systemd", lambda: None)
         monkeypatch.setattr(
             "gateway.status.read_runtime_status",
             lambda: {"restart_requested": True, "gateway_state": "stopped"},

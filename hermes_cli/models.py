@@ -3194,6 +3194,15 @@ def validate_requested_model(
             suggestion_text = ""
             if suggestions:
                 suggestion_text = "\n  Similar models: " + ", ".join(f"`{s}`" for s in suggestions)
+            if not suggestions and not requested_for_lookup.startswith(("gpt-", "o", "codex-")):
+                return {
+                    "accepted": False,
+                    "persist": False,
+                    "recognized": False,
+                    "message": (
+                        f"`{requested}` not found for provider `openai-codex`."
+                    ),
+                }
             return {
                 "accepted": True,
                 "persist": True,

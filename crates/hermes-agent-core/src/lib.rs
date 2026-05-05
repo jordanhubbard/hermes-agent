@@ -25,14 +25,28 @@
 
 pub mod budget;
 pub mod compression;
+pub mod compression_plan;
+pub mod conversation_loop;
 pub mod message;
 pub mod outcome;
 pub mod provider;
+pub mod provider_wire;
+pub mod replay;
 pub mod tool;
 
 pub use budget::{ConversationBudget, TokenUsage, TurnCost};
 pub use compression::{CompressionEvent, CompressionTrigger, LineageTip};
+pub use compression_plan::{plan_compression, CompressionPlan, CompressionPlanOptions};
+pub use conversation_loop::{
+    run_canned_conversation, CannedConversationConfig, CannedConversationInput,
+    CannedConversationResult, StopReason,
+};
 pub use message::{AssistantTurn, Message, Role, ToolTurn};
 pub use outcome::{ConversationOutcome, ConversationResult, InterruptKind};
 pub use provider::{ApiMode, ProviderRouting};
+pub use provider_wire::{
+    build_provider_request, classify_provider_error, parse_provider_response, parse_stream_delta,
+    ParsedProviderResponse, ProviderErrorClass, ProviderRequestOptions, StreamDelta,
+};
+pub use replay::{replay_fixture, ReplayError, ReplayResult};
 pub use tool::{ToolCall, ToolDefinition, ToolFunction, ToolResult};

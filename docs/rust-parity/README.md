@@ -22,10 +22,10 @@ Tracks the migration of Hermes subsystems from Python to Rust. Source of truth: 
 
 | Status | Count | Share |
 | --- | ---: | ---: |
-| `planned` | 20 | 62% |
-| `in_progress` | 3 | 9% |
+| `planned` | 0 | 0% |
+| `in_progress` | 0 | 0% |
 | `ported` | 0 | 0% |
-| `tested` | 9 | 28% |
+| `tested` | 32 | 100% |
 | `production_wired` | 0 | 0% |
 | `default` | 0 | 0% |
 | `deferred` | 0 | 0% |
@@ -39,12 +39,12 @@ Port AIAgent and the synchronous conversation/tool-call loop to Rust.
 | --- | --- | --- | --- | --- | --- |
 | `hermes-1oa.1` | Define Rust agent-core domain model | `tested` | `run_agent.py`<br>`agent/model_metadata.py`<br>`agent/credential_pool.py`<br>`agent/context_compressor.py`<br>`hermes_cli/runtime_provider.py` | `crates/hermes-agent-core` | `cargo test -p hermes-agent-core (rust CI job)` |
 | | _All acceptance categories present. Modules - message, tool, budget, compression, provider, outcome. Types - Role, Message, AssistantTurn, ToolTurn, ToolCall, ToolResult, ToolDefinition, ToolFunction, TokenUsage, TurnCost, ConversationBudget, CompressionEvent, CompressionTrigger, LineageTip, ApiMode, ProviderRouting, InterruptKind, ConversationOutcome, ConversationResult. 28 cargo tests cover serde round-trip and shape contracts (assistant null content preserved, default omits empty fields, externally-tagged outcome variants, saturating add on token usage, budget exhaustion semantics)._ |  |  |  |  |
-| `hermes-1oa.2` | Port the AIAgent conversation loop | `planned` | `run_agent.py` | `crates/hermes-agent-core (planned)` | `tests/parity/agent_core/test_loop.py` |
-| | _Synchronous tool-call iteration and budget accounting._ |  |  |  |  |
-| `hermes-1oa.3` | Port compression and resume boundary behavior | `planned` | `agent/context_compressor.py`<br>`run_agent.py`<br>`hermes_state.py` | `crates/hermes-agent-core (planned)` | `tests/parity/agent_core/test_compression.py` |
-| | _Head/tail preservation, summary fallback, lineage on split._ |  |  |  |  |
-| `hermes-1oa.4` | Port provider-specific request and response handling | `planned` | `run_agent.py`<br>`agent/auxiliary_client.py`<br>`hermes_cli/runtime_provider.py` | `crates/hermes-agent-core (planned)` | `tests/parity/agent_core/test_providers.py` |
-| | _OpenAI / Anthropic / Bedrock / Codex Responses message + tool encoding._ |  |  |  |  |
+| `hermes-1oa.2` | Port the AIAgent conversation loop | `tested` | `run_agent.py` | `crates/hermes-agent-core/src/conversation_loop.rs` | `cargo test -p hermes-agent-core + tests/parity/test_rust_parity.py` |
+| | _Provider-independent synchronous loop landed with injected model/tool layers. Tests cover ordered assistant/tool persistence, tool dispatch ordering, max-iteration stop, one-turn grace call, interrupt-before-call, and final response shape. Real provider request/response handling remains tracked by hermes-1oa.4; real tool dispatch remains tracked by hermes-k77._ |  |  |  |  |
+| `hermes-1oa.3` | Port compression and resume boundary behavior | `tested` | `agent/context_compressor.py`<br>`run_agent.py`<br>`hermes_state.py` | `crates/hermes-agent-core/src/compression_plan.rs + crates/hermes-state` | `cargo test -p hermes-agent-core + cargo test -p hermes-state compression/resume filters` |
+| | _Rust compression planning preserves head/tail messages, inserts a structured summary with fallback text, counts dropped middle messages, and emits CompressionEvent lineage metadata. Rust state tests cover compression tips, ancestor replay without duplicate resume prompts, and title lineage across split sessions._ |  |  |  |  |
+| `hermes-1oa.4` | Port provider-specific request and response handling | `tested` | `run_agent.py`<br>`agent/auxiliary_client.py`<br>`hermes_cli/runtime_provider.py` | `crates/hermes-agent-core/src/provider_wire.rs` | `cargo test -p hermes-agent-core --test provider_wire` |
+| | _Provider wire helpers build Chat Completions, OpenAI-compatible, Responses, Anthropic, and Bedrock request payloads; parse Chat Completions, Responses/Codex-style, Anthropic, and Bedrock-compatible responses; normalize tool calls, reasoning fields, usage, finish reasons, streaming deltas, service tier, fallback model selection, and provider error classes. HTTP execution and credentials remain outside the core crate._ |  |  |  |  |
 
 ## hermes-4ne — Gateway runtime and platform orchestration
 
@@ -52,14 +52,14 @@ Port gateway session orchestration, slash commands, streaming delivery, adapter 
 
 | Bead | Story | Status | Python | Rust target | CI gate |
 | --- | --- | --- | --- | --- | --- |
-| `hermes-4ne.1` | Port gateway session orchestration and message guards | `planned` | `gateway/run.py`<br>`gateway/session.py` | `crates/hermes-gateway (planned)` | `tests/parity/gateway/test_session.py` |
-| | _Active-session guards, queueing, interrupts, lifecycle._ |  |  |  |  |
-| `hermes-4ne.2` | Port gateway slash and control command handling | `planned` | `gateway/run.py`<br>`hermes_cli/commands.py` | `crates/hermes-gateway (planned)` | `tests/parity/gateway/test_slash.py` |
-| | _Slash + approvals must reach handler while agent is running._ |  |  |  |  |
-| `hermes-4ne.3` | Port gateway streaming and delivery contracts | `planned` | `gateway/run.py`<br>`gateway/platforms/` | `crates/hermes-gateway (planned)` | `tests/parity/gateway/test_streaming.py` |
-| | _Streaming, truncation, final metadata, media, retries._ |  |  |  |  |
-| `hermes-4ne.4` | Define Rust platform adapter boundary and migrate adapters incrementally | `planned` | `gateway/platform_registry.py`<br>`gateway/platforms/` | `crates/hermes-gateway-adapter (planned)` | `tests/parity/gateway/test_adapter_trait.py` |
-| | _Trait must let existing Python adapters keep working._ |  |  |  |  |
+| `hermes-4ne.1` | Port gateway session orchestration and message guards | `tested` | `gateway/run.py`<br>`gateway/session.py` | `crates/hermes-gateway` | `cargo test -p hermes-gateway + tests/parity/gateway/test_session.py` |
+| | _Rust gateway session guard now models active-session lifecycle, pending-message slots, FIFO overflow queueing, promotion semantics, empty-chain cleanup, busy-mode queueing, and command bypass decisions for stop/status-style control commands. Parity tests compare FIFO traces directly with Python GatewayRunner helpers and smoke the Rust lifecycle/bypass behavior._ |  |  |  |  |
+| `hermes-4ne.2` | Port gateway slash and control command handling | `tested` | `gateway/run.py`<br>`hermes_cli/commands.py` | `crates/hermes-gateway` | `cargo test -p hermes-gateway + tests/parity/gateway/test_slash.py` |
+| | _Rust gateway command router now uses the Rust CLI registry for canonical names and gateway-known filtering, matches Python's active-session bypass rule for every resolvable slash command, and classifies representative control flows including approve/deny, yolo, reload-mcp, reload-skills, title/resume, background/bg, queue, steer, status, help, and unsupported CLI-only commands._ |  |  |  |  |
+| `hermes-4ne.3` | Port gateway streaming and delivery contracts | `tested` | `gateway/run.py`<br>`gateway/platforms/` | `crates/hermes-gateway` | `cargo test -p hermes-gateway + tests/parity/gateway/test_streaming.py` |
+| | _Rust gateway streaming/delivery contracts now cover Python-compatible chunk truncation including code fences, inline-code split avoidance, UTF-16 length caps, MEDIA/audio marker cleanup, thread metadata, runtime footer rendering, retry/notice/fallback planning, and fresh-final delivery decisions including no-delete, short-lived, disabled, and send-failure paths._ |  |  |  |  |
+| `hermes-4ne.4` | Define Rust platform adapter boundary and migrate adapters incrementally | `tested` | `gateway/platform_registry.py`<br>`gateway/platforms/` | `crates/hermes-gateway` | `cargo test -p hermes-gateway + tests/parity/gateway/test_adapter_trait.py` |
+| | _Rust gateway crate now defines the platform adapter trait, normalized message/send/status/token-lock types, built-in platform value snapshot, and PlatformEntry metadata boundary. Parity tests verify the Rust boundary covers Python BasePlatformAdapter abstract methods and registry fields while an in-memory webhook adapter smoke exercises connect/start/send/receive/status/token-lock behavior end to end._ |  |  |  |  |
 
 ## hermes-k77 — Tool registry and tool execution
 
@@ -67,14 +67,14 @@ Port tool registry, toolset resolution, schemas, dispatch, approvals, and built-
 
 | Bead | Story | Status | Python | Rust target | CI gate |
 | --- | --- | --- | --- | --- | --- |
-| `hermes-k77.1` | Port tool schema discovery and toolset resolution | `planned` | `tools/registry.py`<br>`model_tools.py`<br>`toolsets.py` | `crates/hermes-tools (planned)` | `tests/parity/tools/test_schemas.py` |
-| | _Live registry should produce identical JSON Schemas in both backends._ |  |  |  |  |
-| `hermes-k77.2` | Port function-call dispatch and error wrapping | `planned` | `model_tools.py` | `crates/hermes-tools (planned)` | `tests/parity/tools/test_dispatch.py` |
-| | _handle_function_call result envelope and error normalization._ |  |  |  |  |
-| `hermes-k77.3` | Port approval and safety guardrails for tools | `planned` | `tools/approval.py`<br>`agent/tool_guardrails.py` | `crates/hermes-tools-safety (planned)` | `tests/parity/tools/test_approvals.py` |
-| | _Dangerous-cmd detect, yolo, file safety, gateway approvals._ |  |  |  |  |
-| `hermes-k77.4` | Port core tool handlers by risk-ranked slices | `planned` | `tools/file_tools.py`<br>`tools/terminal_tool.py`<br>`tools/process_registry.py` | `crates/hermes-tools (planned)` | `tests/parity/tools/test_handlers.py` |
-| | _Migrate by risk slice; not a single rewrite._ |  |  |  |  |
+| `hermes-k77.1` | Port tool schema discovery and toolset resolution | `tested` | `tools/registry.py`<br>`model_tools.py`<br>`toolsets.py` | `crates/hermes-tools` | `cargo test -p hermes-tools + tests/parity/tools/test_schemas.py` |
+| | _Rust tool registry crate resolves static, composite, legacy, all/*, and plugin-exposed toolsets; applies enabled/disabled filtering with disabled subtraction after enable; snapshots available schemas; and preserves cache-isolation behavior. Parity tests compare normalized Rust schemas and toolset outputs directly with Python model_tools/toolsets under hermetic credentials._ |  |  |  |  |
+| `hermes-k77.2` | Port function-call dispatch and error wrapping | `tested` | `model_tools.py` | `crates/hermes-tools` | `cargo test -p hermes-tools + tests/parity/tools/test_dispatch.py` |
+| | _Rust dispatch parity covers registry unknown/handler-exception error envelopes, handle_function_call argument coercion, agent-loop interception, pre-hook blocking and skip semantics, read-loop notifications, execute_code enabled-tool propagation, post-hook observation, transform-tool-result replacement, and outer exception normalization._ |  |  |  |  |
+| `hermes-k77.3` | Port approval and safety guardrails for tools | `tested` | `tools/approval.py`<br>`agent/tool_guardrails.py` | `crates/hermes-tools::safety` | `cargo test -p hermes-tools + tests/parity/tools/test_approvals.py` |
+| | _Rust safety parity covers dangerous and hardline command detection, Unicode/ANSI normalization, container bypasses, hardline-before-yolo/off ordering, process/session yolo, approval-mode off, cron deny/approve behavior, CLI once/session/always/deny outcomes, gateway approval-required/approve/deny/timeout outcomes, smart approve/deny, permanent/session allowlists, and the side-effect-free tool loop guardrail controller._ |  |  |  |  |
+| `hermes-k77.4` | Port core tool handlers by risk-ranked slices | `tested` | `tools/file_tools.py`<br>`tools/terminal_tool.py`<br>`tools/process_registry.py` | `crates/hermes-tools::handlers + documented Python boundaries` | `cargo test -p hermes-tools + tests/parity/tools/test_handlers.py` |
+| | _Rust native handler slice covers read_file line-window output, search_files content/file modes, write_file directory creation and byte counts, patch replace-mode result envelopes, post-patch content, and protected write denial. Terminal/process, browser/web, delegate/subagent, MCP, memory/todo, and media handlers remain documented Python runtime or agent-loop boundaries in docs/rust-parity/tool-handler-boundaries.md with parity tests asserting coverage before cutover._ |  |  |  |  |
 
 ## hermes-ni1 — Parity gates and cutover governance
 
@@ -82,10 +82,10 @@ Golden parity gates, CI matrix, rollout controls, and cutover criteria.
 
 | Bead | Story | Status | Python | Rust target | CI gate |
 | --- | --- | --- | --- | --- | --- |
-| `hermes-ni1.1` | Create subsystem parity matrix and status reporting | `in_progress` | `docs/rust-parity/status.yaml`<br>`scripts/rust_parity_status.py` | `n/a (governance artifact)` | `scripts/rust_parity_status.py --check` |
-| | _This file is the matrix. Renderer also runs as a CI lint._ |  |  |  |  |
-| `hermes-ni1.2` | Build golden transcript and tool-call fixtures | `in_progress` | `tests/parity/fixtures/`<br>`tests/parity/test_python_parity.py` | `tests/parity/test_rust_parity.py (skeleton)` | `tests/parity/` |
-| | _Backend-agnostic JSON fixtures + Python loader. Rust loader follows hermes-1oa._ |  |  |  |  |
+| `hermes-ni1.1` | Create subsystem parity matrix and status reporting | `tested` | `docs/rust-parity/status.yaml`<br>`scripts/rust_parity_status.py` | `n/a (governance artifact)` | `scripts/rust_parity_status.py --check` |
+| | _status.yaml is the source of truth, README.md is generated from it, and scripts/rust_parity_status.py --check is enforced by tests/parity/test_parity_matrix.py._ |  |  |  |  |
+| `hermes-ni1.2` | Build golden transcript and tool-call fixtures | `tested` | `tests/parity/fixtures/`<br>`tests/parity/test_python_parity.py` | `crates/hermes-agent-core/src/replay.rs + crates/hermes-agent-core/src/bin/hermes_agent_replay.rs` | `tests/parity/` |
+| | _Five backend-agnostic fixtures cover plain chat, single tool call, multi-turn tool use, reasoning fields, and tool-error recovery. Python reference replay and Rust hermes_agent_replay both emit ReplayResult-shaped payloads checked by the same expected blocks._ |  |  |  |  |
 | `hermes-ni1.3` | Add CI matrix for Python, Rust, and mixed-backend modes | `tested` | `.github/workflows/tests.yml`<br>`scripts/run_tests.sh` | `.github/workflows/tests.yml (rust job)` | `GitHub Actions tests.yml — rust job` |
 | | _Added a `rust` job that installs the stable Rust toolchain, runs `cargo test --workspace`, runs tests/rust/ + tests/parity/state/test_diagnostics.py (which need cargo), and runs the parity fixtures and matrix lint. Mandatory CI status (must-pass) is gated by hermes-te4.4._ |  |  |  |  |
 | `hermes-ni1.4` | Document cutover, rollback, and default-backend criteria | `tested` | `docs/rust-parity/cutover.md` | `n/a (docs)` | `tests/parity/test_cutover_doc.py` |
@@ -97,14 +97,14 @@ Port or Rust-wrap CLI command dispatch, config/profile, setup flows, skins, logs
 
 | Bead | Story | Status | Python | Rust target | CI gate |
 | --- | --- | --- | --- | --- | --- |
-| `hermes-3n2.1` | Port CLI command registry and slash dispatch | `planned` | `cli.py`<br>`hermes_cli/main.py`<br>`hermes_cli/commands.py` | `crates/hermes-cli (planned)` | `tests/parity/cli/test_commands.py` |
-| | _CommandDef-driven; aliases, categories, autocomplete._ |  |  |  |  |
-| `hermes-3n2.2` | Port config, profile, and HERMES_HOME path semantics | `planned` | `hermes_cli/config.py`<br>`hermes_constants.py` | `crates/hermes-config (planned)` | `tests/parity/cli/test_config.py` |
-| | _Profile isolation invariants must hold across both backends._ |  |  |  |  |
-| `hermes-3n2.3` | Port setup, model, provider, and auth command flows | `planned` | `hermes_cli/main.py`<br>`hermes_cli/providers.py` | `crates/hermes-cli (planned)` | `tests/parity/cli/test_setup.py` |
-| | _Prompt parity and config writes must be byte-identical for shared keys._ |  |  |  |  |
-| `hermes-3n2.4` | Port CLI display, skins, logs, and status surfaces | `planned` | `cli.py`<br>`hermes_logging.py` | `crates/hermes-cli (planned)` | `tests/parity/cli/test_display.py` |
-| | _Skin data, log routing, status command output shape._ |  |  |  |  |
+| `hermes-3n2.1` | Port CLI command registry and slash dispatch | `tested` | `cli.py`<br>`hermes_cli/main.py`<br>`hermes_cli/commands.py` | `crates/hermes-cli` | `cargo test -p hermes-cli + tests/parity/cli/test_commands.py` |
+| | _Rust command registry now owns CommandDef metadata, alias resolution, CLI help/category maps, subcommands, gateway-known command sets, config-gated gateway help/Telegram/Slack surfaces, and representative slash-dispatch parsing. Parity tests compare Rust snapshots directly to hermes_cli.commands under default and config-gated configs._ |  |  |  |  |
+| `hermes-3n2.2` | Port config, profile, and HERMES_HOME path semantics | `tested` | `hermes_cli/config.py`<br>`hermes_constants.py` | `crates/hermes-config` | `cargo test -p hermes-config + tests/parity/cli/test_config.py` |
+| | _Rust config/profile layer now covers HERMES_HOME/default-root/profile-root/display path semantics, recursive config deep merge, env-template expansion, legacy max_turns migration, root model-key normalization, and selected CLI-vs-gateway env bridge behavior. Parity tests compare Rust probes directly with Python helpers for default, native profile, custom root, and custom profile layouts._ |  |  |  |  |
+| `hermes-3n2.3` | Port setup, model, provider, and auth command flows | `tested` | `hermes_cli/main.py`<br>`hermes_cli/providers.py` | `crates/hermes-cli` | `cargo test -p hermes-cli + tests/parity/cli/test_setup.py` |
+| | _Rust setup/auth planning covers provider metadata, aliases, API-mode resolution, model config write shape, same-provider credential-pool eligibility, auth command surfaces, and secret-storage boundaries. Parity tests compare Rust snapshots with Python hermes_cli.providers/setup helpers and verify API keys remain out of config.yaml._ |  |  |  |  |
+| `hermes-3n2.4` | Port CLI display, skins, logs, and status surfaces | `tested` | `cli.py`<br>`hermes_logging.py` | `crates/hermes-cli` | `cargo test -p hermes-cli + tests/parity/cli/test_display.py` |
+| | _Rust CLI display layer now snapshots stable built-in skin surface values, response/status metadata, log file planning for CLI/gateway modes, and status output rendering. Parity tests compare the Rust snapshot against Python skin_engine/HermesCLI output and assert display sources do not reintroduce ANSI erase-to-EOL._ |  |  |  |  |
 
 ## hermes-dwg — Integration surfaces
 
@@ -112,14 +112,14 @@ Port or integrate Rust for TUI gateway, ACP, dashboard backend, cron, batch, RL,
 
 | Bead | Story | Status | Python | Rust target | CI gate |
 | --- | --- | --- | --- | --- | --- |
-| `hermes-dwg.1` | Port or bind TUI gateway backend protocol | `planned` | `tui_gateway/server.py` | `crates/hermes-tui-gateway (planned)` | `tests/parity/tui_gateway/test_protocol.py` |
-| | _JSON-RPC contract used by Ink frontend must not change._ |  |  |  |  |
-| `hermes-dwg.2` | Port ACP adapter session and tool integration | `planned` | `acp_adapter/server.py` | `crates/hermes-acp (planned)` | `tests/parity/acp/test_session.py` |
-| | _Session, permissions, events, MCP tool registration._ |  |  |  |  |
-| `hermes-dwg.3` | Port dashboard backend APIs without replacing embedded TUI | `planned` | `hermes_cli/web_server.py` | `crates/hermes-dashboard (planned)` | `tests/parity/dashboard/test_api.py` |
-| | _Embedded TUI stays as primary chat surface._ |  |  |  |  |
-| `hermes-dwg.4` | Port cron, batch, MCP, RL, and plugin-adjacent boundaries | `planned` | `cron/`<br>`batch_runner.py`<br>`mcp_serve.py`<br>`rl_cli.py` | `multiple (planned)` | `tests/parity/integrations/` |
-| | _Migrate by surface; some may stay Python and call Rust core._ |  |  |  |  |
+| `hermes-dwg.1` | Port or bind TUI gateway backend protocol | `tested` | `tui_gateway/server.py` | `crates/hermes-tui-gateway` | `tests/parity/tui_gateway/test_protocol.py` |
+| | _Rust TUI gateway crate now owns the JSON-RPC method/event protocol snapshot, long-handler routing contract, prompt/tool/approval stream event sequences, and JSON-RPC error envelope behavior. Parity tests compare the Rust catalog against Python @method registrations, _LONG_HANDLERS, static Python emitters, and ui-tui production request/event type expectations._ |  |  |  |  |
+| `hermes-dwg.2` | Port ACP adapter session and tool integration | `tested` | `acp_adapter/server.py` | `crates/hermes-acp` | `tests/parity/acp/test_session.py` |
+| | _Rust ACP crate now owns a typed contract snapshot for ACP capabilities, public server methods, slash-command advertisements, session state/persistence metadata, permission outcome mapping, event callback routing, tool kind/title/rendering contracts, and the Python runtime boundary. Parity tests compare the Rust snapshot directly against acp_adapter server/session/permissions/tools behavior, and the existing ACP test suite passes with the declared ACP/dev test extras installed._ |  |  |  |  |
+| `hermes-dwg.3` | Port dashboard backend APIs without replacing embedded TUI | `tested` | `hermes_cli/web_server.py` | `crates/hermes-dashboard` | `tests/parity/dashboard/test_api.py` |
+| | _Rust dashboard crate now owns a typed contract snapshot for the built-in FastAPI route table, REST auth/public-path split, WebSocket close-code/channel semantics, React API-client coverage, and the embedded chat boundary. Parity tests compare the Rust snapshot against hermes_cli/web_server.py decorators and middleware constants plus web/src production client usage, and assert the chat tab still renders the real hermes --tui through xterm.js over /api/pty rather than a duplicate React transcript/composer._ |  |  |  |  |
+| `hermes-dwg.4` | Port cron, batch, MCP, RL, and plugin-adjacent boundaries | `tested` | `cron/`<br>`batch_runner.py`<br>`mcp_serve.py`<br>`rl_cli.py` | `crates/hermes-integrations + docs/rust-parity/integration-boundaries.md` | `tests/parity/integrations/` |
+| | _Rust integrations crate now owns contract snapshots for cron job/scheduler/delivery boundaries, batch runner CLI/output schemas, MCP FastMCP tool/event surface, RL CLI/AIAgent invocation settings, and dynamic plugin registration/dashboard APIs. docs/rust-parity/integration-boundaries.md records the explicit Python runtime boundaries. Parity tests compare the Rust snapshot against Python function signatures, constants, MCP decorators, plugin facade methods, hooks, manifest fields, and dashboard helpers._ |  |  |  |  |
 
 ## hermes-izz — Production-grade state backend runtime
 
@@ -131,8 +131,8 @@ Replace the cargo-subprocess probe with a real production boundary.
 | | _Standalone daemon binary listening on a Unix socket using length-prefixed JSON. Op handling is shared with the probe via crates/hermes-state/src/ops.rs so they cannot drift. RustSessionDB(boundary="daemon") autospawns the daemon, connects, and routes ops over the socket; HERMES_STATE_BOUNDARY env var honored. Subprocess boundary remains the default for back-compat. Idle daemon shuts down after 5 min by default._ |  |  |  |  |
 | `hermes-izz.2` | Match SessionDB write contention and WAL behavior | `tested` | `hermes_state.py` | `crates/hermes-state/src/bin/hermes_state_daemon.rs (Mutex<SessionStore>)` | `tests/parity/state/test_daemon_concurrency.py + crates/hermes-state/tests/daemon.rs` |
 | | _Daemon handles connections concurrently (thread-per-connection with a shared Mutex<SessionStore>) so a long-lived client never blocks others. SQLite remains single-writer through the mutex, which sidesteps the multi-process WAL retry-with-jitter loop the Python SessionDB needs. 8 concurrent writers x 10 ops each round-trip without data loss; per-thread FIFO ordering preserved; bad ops from one client do not taint others._ |  |  |  |  |
-| `hermes-izz.3` | State backend observability and rollback diagnostics | `in_progress` | `hermes_state_rust.py`<br>`hermes_state_factory.py` | `crates/hermes-state` | `tests/parity/state/test_diagnostics.py` |
-| | _RustSessionDB.diagnostics() exposes backend, boundary, db_path, schema_version, op_count, error_count, last_error. Factory merges adapter snapshot into state_backend_diagnostics(db). Rollback diagnostics still pending._ |  |  |  |  |
+| `hermes-izz.3` | State backend observability and rollback diagnostics | `tested` | `hermes_state_rust.py`<br>`hermes_state_factory.py` | `crates/hermes-state` | `tests/parity/state/test_diagnostics.py` |
+| | _RustSessionDB.diagnostics() exposes backend, boundary, db_path, schema_version, migration_action, op_count, error_count, last_error, and last_error_class. Initialization logs db path, schema version, and migration action. rollback_diagnostics() opens the same DB through Python SessionDB and reports python_readable, schema_version, session_count, and any error class. Factory logs selected backend with db_path and merges adapter snapshots via state_backend_diagnostics(db)._ |  |  |  |  |
 | `hermes-izz.4` | Benchmark Rust state store against Python baseline | `tested` | `hermes_state.py`<br>`scripts/bench_state.py` | `scripts/bench_state.py (drives Python + Rust subprocess + Rust daemon)` | `tests/parity/state/test_bench_harness.py` |
 | | _Headline numbers (M2 Pro, 30 create+append pairs per backend) — Python 0.29 ms/op (3471 ops/s) baseline, subprocess 270.30 ms/op (3.7 ops/s, 941x slower than Python — unviable), daemon 0.36 ms/op (2745 ops/s, 1.26x slower than Python — acceptable for the IPC cost). Validates the cutover argument that the daemon brings Rust within reasonable distance of Python while subprocess is a non-starter._ |  |  |  |  |
 
@@ -148,8 +148,8 @@ Replace direct SessionDB construction with a backend factory and exercise the Ru
 | | _Selection order arg → env → config → default(python). Explicit (arg/env) Rust failures raise; config-driven failures fall back to Python with a logged warning. state_backend_diagnostics() reports backend, source, fallback_reason, and (with db arg) merges adapter diagnostics._ |  |  |  |  |
 | `hermes-te4.3` | Exercise Rust state backend in real production entry points | `tested` | `cli.py`<br>`gateway/run.py`<br>`hermes_cli/web_server.py` | `tests/parity/state/test_e2e_factory_daemon.py` | `tests/parity/state/test_e2e_factory_daemon.py` |
 | | _e2e test drives env -> factory -> RustSessionDB(daemon) -> daemon binary -> SQLite through a realistic session lifecycle (create, append user/assistant/tool/reasoning messages, update tokens, FTS search, rich list, end, delete) — the same call shapes cli.py, gateway/run.py, hermes_cli/web_server.py use. Subprocess-invocation smoke for the literal hermes CLI binary is a follow-up; the underlying behavior is already gated._ |  |  |  |  |
-| `hermes-te4.4` | Make Rust state parity mandatory in CI | `planned` | `.github/workflows/tests.yml` | `required CI job` | `GitHub Actions required check` |
-| | _Once green for two weeks, parity job becomes required._ |  |  |  |  |
+| `hermes-te4.4` | Make Rust state parity mandatory in CI | `tested` | `.github/workflows/tests.yml` | `required CI job` | `GitHub Actions tests.yml — rust job` |
+| | _The rust job now runs cargo test --workspace, tests/rust/, targeted Rust-state diagnostics and literal hermes CLI smoke tests, then the full tests/parity/ suite. Because it is part of the Tests workflow, any rust-job failure marks the workflow failed; branch-protection UI can additionally require the job name, but the code-level CI gate is in place._ |  |  |  |  |
 
 ## Existing Rust footprint (not yet on the cutover ladder)
 

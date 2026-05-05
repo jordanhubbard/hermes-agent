@@ -2,6 +2,13 @@
 members = [
     "crates/hermes-state",
     "crates/hermes-agent-core",
+    "crates/hermes-cli",
+    "crates/hermes-config",
+    "crates/hermes-gateway",
+    "crates/hermes-acp",
+    "crates/hermes-dashboard",
+    "crates/hermes-integrations",
+    "crates/hermes-tui-gateway",
+    "crates/hermes-tools",
 ]
 resolver = "2"
-

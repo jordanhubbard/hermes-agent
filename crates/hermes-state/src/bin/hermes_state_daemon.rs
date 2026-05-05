@@ -119,9 +119,7 @@ fn run() -> Result<(), String> {
                 // — handle_connection uses read_exact and the read/write
                 // timeouts to bound stalls.
                 if let Err(err) = stream.set_nonblocking(false) {
-                    eprintln!(
-                        "hermes_state_daemon: failed to make stream blocking: {err}"
-                    );
+                    eprintln!("hermes_state_daemon: failed to make stream blocking: {err}");
                     continue;
                 }
                 let store_handle = Arc::clone(&store);

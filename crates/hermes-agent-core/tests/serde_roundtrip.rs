@@ -25,8 +25,8 @@ fn fixture_path(name: &str) -> PathBuf {
 
 fn load_fixture(name: &str) -> Value {
     let path = fixture_path(name);
-    let text = std::fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+    let text =
+        std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
     serde_json::from_str(&text).expect("fixture is valid JSON")
 }
 
@@ -197,4 +197,3 @@ fn tool_function_definition_constructs() {
     let back: ToolDefinition = serde_json::from_value(v).unwrap();
     assert_eq!(back, def);
 }
-

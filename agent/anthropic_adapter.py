@@ -682,10 +682,13 @@ def _read_claude_code_credentials_from_keychain() -> Optional[Dict[str, Any]]:
     raw = result.stdout.strip()
     if not raw:
         return None
+    if not isinstance(raw, (str, bytes, bytearray)):
+        logger.debug("Keychain: credentials payload is not text")
+        return None
 
     try:
         data = json.loads(raw)
-    except json.JSONDecodeError:
+    except (json.JSONDecodeError, TypeError):
         logger.debug("Keychain: credentials payload is not valid JSON")
         return None
 
@@ -1948,12 +1951,7 @@ def build_anthropic_kwargs(
     # Opus 4.6 — Opus 4.7 and other models 400 on the speed parameter.
     # Only for native Anthropic endpoints — third-party providers would
     # reject the unknown beta header and speed parameter.
-    if (
-        fast_mode
-        and not _is_third_party_anthropic_endpoint(base_url)
-        and _supports_fast_mode(model)
-    ):
-        kwargs.setdefault("extra_body", {})["speed"] = "fast"
+    if fast_mode and not _is_third_party_anthropic_endpoint(base_url):
         # Build extra_headers with ALL applicable betas (the per-request
         # extra_headers override the client-level anthropic-beta header).
         betas = list(_common_betas_for_base_url(
@@ -1962,9 +1960,10 @@ def build_anthropic_kwargs(
         ))
         if is_oauth:
             betas.extend(_OAUTH_ONLY_BETAS)
-        betas.append(_FAST_MODE_BETA)
+        if _supports_fast_mode(model):
+            betas.append(_FAST_MODE_BETA)
         kwargs["extra_headers"] = {"anthropic-beta": ",".join(betas)}
+        if _supports_fast_mode(model):
+            kwargs.setdefault("extra_body", {})["speed"] = "fast"
 
     return kwargs
-
-

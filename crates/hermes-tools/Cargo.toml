@@ -1,0 +1,13 @@
+[package]
+name = "hermes-tools"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.70"
+description = "Rust tool registry and toolset resolution for Hermes Agent"
+license = "MIT"
+
+[dependencies]
+regex = "1.10"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sha2 = "0.10"

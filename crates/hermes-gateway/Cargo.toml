@@ -1,0 +1,15 @@
+[package]
+name = "hermes-gateway"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.70"
+description = "Rust gateway adapter boundary for Hermes Agent"
+license = "MIT"
+
+[dependencies]
+async-trait = "0.1"
+hermes-cli = { path = "../hermes-cli" }
+regex = "1.11"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1.38", features = ["macros", "rt"] }

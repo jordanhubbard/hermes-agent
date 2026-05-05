@@ -97,8 +97,14 @@ def test_wait_for_process_kills_subprocess_on_keyboardinterrupt():
     try:
         result_holder = {}
         proc_holder = {}
-        started = threading.Event()
-        raise_at = [None]  # set by the main thread to tell worker when
+        original_run_bash = env._run_bash
+
+        def capturing_run_bash(*args, **kwargs):
+            proc = original_run_bash(*args, **kwargs)
+            proc_holder["proc"] = proc
+            return proc
+
+        env._run_bash = capturing_run_bash
 
         # Drive execute() on a separate thread so we can SIGNAL-interrupt it
         # via a thread-targeted exception without killing our test process.
@@ -113,34 +119,15 @@ def test_wait_for_process_kills_subprocess_on_keyboardinterrupt():
 
         t = threading.Thread(target=worker, daemon=True)
         t.start()
-        # Wait until the subprocess actually exists.  LocalEnvironment.execute
-        # does init_session() (one spawn) before the real command, so we need
-        # to wait until a sleep 30 is visible.  Use pgrep-style lookup via
-        # /proc to find the bash process running our sleep.
+        # Wait until the subprocess actually exists. Capture the shell wrapper
+        # directly instead of relying on platform-specific process table text
+        # for the nested `sleep 30` child.
         deadline = time.monotonic() + 5.0
         target_pid = None
         while time.monotonic() < deadline:
-            # Walk our children and grand-children to find one running 'sleep 30'
-            try:
-                import psutil  # optional — fall back if absent
-                for p in psutil.Process(os.getpid()).children(recursive=True):
-                    try:
-                        if "sleep 30" in " ".join(p.cmdline()):
-                            target_pid = p.pid
-                            break
-                    except (psutil.NoSuchProcess, psutil.AccessDenied):
-                        continue
-            except ImportError:
-                # Fall back to ps
-                ps = subprocess.run(
-                    ["ps", "-eo", "pid,ppid,pgid,cmd"], capture_output=True, text=True,
-                )
-                for line in ps.stdout.splitlines():
-                    if "sleep 30" in line and "grep" not in line:
-                        parts = line.split()
-                        if parts and parts[0].isdigit():
-                            target_pid = int(parts[0])
-                            break
+            proc = proc_holder.get("proc")
+            if proc is not None and proc.poll() is None:
+                target_pid = proc.pid
             if target_pid:
                 break
             time.sleep(0.1)

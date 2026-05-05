@@ -294,7 +294,16 @@ class RustSessionDB:
         self._op_count = 0
         self._error_count = 0
         self._last_error: Optional[str] = None
+        self._last_error_class: Optional[str] = None
+        self._migration_action = "schema_checked"
         self._schema_version = self._run_operation({"op": "schema_version"})
+        logger.info(
+            "rust state backend initialized: boundary=%s db=%s schema_version=%s migration_action=%s",
+            self.boundary,
+            self.db_path,
+            self._schema_version,
+            self._migration_action,
+        )
         self._lock = threading.RLock()
         self._conn = sqlite3.connect(
             str(self.db_path),
@@ -325,10 +334,46 @@ class RustSessionDB:
             ),
             "db_path": str(self.db_path),
             "schema_version": self._schema_version,
+            "migration_action": self._migration_action,
             "op_count": self._op_count,
             "error_count": self._error_count,
             "last_error": self._last_error,
+            "last_error_class": self._last_error_class,
         }
+
+    def rollback_diagnostics(self) -> Dict[str, Any]:
+        """Check whether Python SessionDB can open the same database.
+
+        This is the rollback safety probe for ``HERMES_STATE_BACKEND=python``:
+        rollback must be a backend-selection change, not a data migration.
+        """
+        try:
+            from hermes_state import SessionDB
+
+            py_db = SessionDB(self.db_path)
+            try:
+                row = py_db._conn.execute(  # type: ignore[attr-defined]
+                    "SELECT version FROM schema_version LIMIT 1"
+                ).fetchone()
+                return {
+                    "python_readable": True,
+                    "db_path": str(self.db_path),
+                    "schema_version": row[0] if row else None,
+                    "session_count": py_db.session_count(),
+                    "error": None,
+                    "error_class": None,
+                }
+            finally:
+                py_db.close()
+        except Exception as exc:
+            return {
+                "python_readable": False,
+                "db_path": str(self.db_path),
+                "schema_version": None,
+                "session_count": None,
+                "error": str(exc),
+                "error_class": type(exc).__name__,
+            }
 
     def _run_operation(self, operation: Dict[str, Any]) -> Any:
         return self._run_operations([operation])[0]
@@ -346,6 +391,7 @@ class RustSessionDB:
             except RustStateBackendError as exc:
                 self._error_count += 1
                 self._last_error = str(exc)
+                self._last_error_class = type(exc).__name__
                 logger.warning(
                     "rust state daemon failed: ops=%s detail=%s",
                     op_names,
@@ -376,6 +422,7 @@ class RustSessionDB:
         except (FileNotFoundError, OSError) as exc:
             self._error_count += 1
             self._last_error = f"failed to invoke cargo at {self.cargo!r}: {exc}"
+            self._last_error_class = type(exc).__name__
             logger.warning(
                 "rust state probe could not start: ops=%s detail=%s",
                 op_names,
@@ -386,6 +433,7 @@ class RustSessionDB:
             detail = result.stderr.strip() or result.stdout.strip()
             self._error_count += 1
             self._last_error = detail or "Rust state probe failed"
+            self._last_error_class = "ProcessExit"
             logger.warning(
                 "rust state probe failed: ops=%s rc=%s detail=%s",
                 op_names,
@@ -400,6 +448,7 @@ class RustSessionDB:
             self._last_error = (
                 f"Rust state probe returned invalid JSON: {result.stdout!r}"
             )
+            self._last_error_class = type(exc).__name__
             raise RustStateBackendError(self._last_error) from exc
 
     def create_session(self, session_id: str, source: str, **kwargs) -> str:

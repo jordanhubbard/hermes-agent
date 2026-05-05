@@ -1,8 +1,6 @@
 """Diagnostics tests for the Rust state adapter.
 
 Covers bead hermes-izz.3 (state backend observability + rollback diagnostics).
-The full rollback story belongs to a future bead — this file pins the
-diagnostic surface so observability cannot be silently regressed.
 """
 
 from __future__ import annotations
@@ -32,10 +30,12 @@ def test_diagnostics_includes_required_keys(tmp_path: Path) -> None:
     assert snap["boundary"] == "cargo-subprocess"
     assert snap["db_path"] == str(tmp_path / "state.db")
     assert isinstance(snap["schema_version"], int) and snap["schema_version"] > 0
+    assert snap["migration_action"] == "schema_checked"
     # op_count is at least 1 because __init__ calls schema_version.
     assert snap["op_count"] >= 1
     assert snap["error_count"] == 0
     assert snap["last_error"] is None
+    assert snap["last_error_class"] is None
 
 
 def test_diagnostics_op_count_grows(tmp_path: Path) -> None:
@@ -63,3 +63,35 @@ def test_diagnostics_records_errors(tmp_path: Path, monkeypatch) -> None:
         db._conn = None  # type: ignore[attr-defined]
     assert snap["error_count"] >= 1
     assert snap["last_error"]
+    assert snap["last_error_class"] == "FileNotFoundError"
+
+
+def test_rollback_diagnostics_confirm_python_can_open_rust_db(tmp_path: Path) -> None:
+    db = RustSessionDB(tmp_path / "state.db")
+    try:
+        db.create_session("rollback-safe", source="cli")
+        snap = db.rollback_diagnostics()
+    finally:
+        db.close()
+
+    assert snap["python_readable"] is True
+    assert snap["db_path"] == str(tmp_path / "state.db")
+    assert isinstance(snap["schema_version"], int) and snap["schema_version"] > 0
+    assert snap["session_count"] == 1
+    assert snap["error"] is None
+    assert snap["error_class"] is None
+
+
+def test_initialization_logs_schema_and_db_path(tmp_path: Path, caplog) -> None:
+    caplog.set_level("INFO", logger="hermes_state_rust")
+    db = RustSessionDB(tmp_path / "state.db")
+    try:
+        pass
+    finally:
+        db.close()
+
+    messages = [record.getMessage() for record in caplog.records]
+    assert any("rust state backend initialized" in message for message in messages)
+    assert any(str(tmp_path / "state.db") in message for message in messages)
+    assert any("schema_version=" in message for message in messages)
+    assert any("migration_action=schema_checked" in message for message in messages)

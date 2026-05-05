@@ -10474,7 +10474,10 @@ class AIAgent:
         # the review fork runs on its own thread with a fresh context,
         # so the foreground value here does not leak into it.
         from tools.skill_provenance import set_current_write_origin
-        set_current_write_origin(getattr(self, "_memory_write_origin", "assistant_tool"))
+        write_origin = getattr(self, "_memory_write_origin", "foreground")
+        if write_origin == "assistant_tool":
+            write_origin = "foreground"
+        set_current_write_origin(write_origin)
 
         # If the previous turn activated fallback, restore the primary
         # runtime so this turn gets a fresh attempt with the preferred model.

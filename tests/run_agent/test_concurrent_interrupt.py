@@ -44,6 +44,7 @@ def _make_agent(monkeypatch):
         _current_tool = None
         _last_activity = 0
         _print_fn = print
+        _tool_guardrails = MagicMock()
         # Worker-thread tracking state mirrored from AIAgent.__init__ so the
         # real interrupt() method can fan out to concurrent-tool workers.
         _active_children: list = []
@@ -72,7 +73,12 @@ def _make_agent(monkeypatch):
         def _has_stream_consumers(self):
             return False
 
+        def _append_guardrail_observation(self, result, *args, **kwargs):
+            return result
+
     stub = _Stub()
+    from agent.tool_guardrails import ToolGuardrailDecision
+    stub._tool_guardrails.before_call.return_value = ToolGuardrailDecision()
     # Bind the real methods under test
     stub._execute_tool_calls_concurrent = _ra.AIAgent._execute_tool_calls_concurrent.__get__(stub)
     stub.interrupt = _ra.AIAgent.interrupt.__get__(stub)
@@ -107,7 +113,7 @@ def test_concurrent_interrupt_cancels_pending(monkeypatch):
 
     original_invoke = agent._invoke_tool
 
-    def slow_tool(name, args, task_id, call_id=None):
+    def slow_tool(name, args, task_id, call_id=None, **kwargs):
         if name == "slow_one":
             # Block until the test sets the interrupt
             barrier.wait(timeout=10)
@@ -184,7 +190,7 @@ def test_running_concurrent_worker_sees_is_interrupted(monkeypatch):
     observed = {"saw_true": False, "poll_count": 0, "worker_tid": None}
     worker_started = threading.Event()
 
-    def polling_tool(name, args, task_id, call_id=None, messages=None):
+    def polling_tool(name, args, task_id, call_id=None, messages=None, **kwargs):
         observed["worker_tid"] = threading.current_thread().ident
         worker_started.set()
         deadline = time.monotonic() + 5.0
@@ -261,4 +267,3 @@ def test_clear_interrupt_clears_worker_tids(monkeypatch):
         "clear_interrupt() did not clear the interrupt bit for a tracked "
         "worker tid — stale interrupt can leak into the next turn"
     )
-

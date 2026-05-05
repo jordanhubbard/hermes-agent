@@ -868,6 +868,14 @@ class TestAgentCacheSpilloverLive:
             platform="telegram",
         )
 
+    def _light_agent(self):
+        """Cheap cache-cap stand-in for high-volume concurrency tests."""
+        agent = MagicMock()
+        agent.client = object()
+        agent.release_clients = MagicMock()
+        agent.close = MagicMock()
+        return agent
+
     def test_fill_to_cap_then_spillover(self, monkeypatch):
         """Fill to cap with real agents, insert one more, oldest evicted."""
         from gateway import run as gw_run
@@ -947,7 +955,7 @@ class TestAgentCacheSpilloverLive:
 
         def worker(tid: int):
             for j in range(PER_THREAD):
-                a = self._real_agent()
+                a = self._light_agent()
                 key = f"t{tid}-s{j}"
                 with runner._agent_cache_lock:
                     runner._agent_cache[key] = (a, "sig")

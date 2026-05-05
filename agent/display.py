@@ -764,7 +764,7 @@ class KawaiiSpinner:
         if not self.running:
             self._write(f"  {text}", flush=True)
             return
-        # Clear spinner line with spaces (not \033[K) to avoid garbled escape
+        # Clear spinner line with spaces instead of ANSI erase-to-EOL to avoid garbled escape
         # codes when prompt_toolkit's patch_stdout is active — same approach
         # as stop(). Then print text; spinner redraws on next tick.
         blanks = ' ' * max(self.last_line_len + 5, 40)
@@ -777,7 +777,7 @@ class KawaiiSpinner:
 
         is_tty = self._is_tty
         if is_tty:
-            # Clear the spinner line with spaces instead of \033[K to avoid
+            # Clear the spinner line with spaces instead of ANSI erase-to-EOL to avoid
             # garbled escape codes when prompt_toolkit's patch_stdout is active.
             blanks = ' ' * max(self.last_line_len + 5, 40)
             self._write(f"\r{blanks}\r", end='', flush=True)
@@ -998,5 +998,4 @@ def get_cute_tool_message(
 # =========================================================================
 # Honcho session line (one-liner with clickable OSC 8 hyperlink)
 # =========================================================================
-
 

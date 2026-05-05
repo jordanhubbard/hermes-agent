@@ -168,15 +168,16 @@ def _record_selection(
     if should_log:
         if fallback_reason:
             logger.info(
-                "state backend: %s (requested=%s source=%s fallback_reason=%s)",
+                "state backend: %s (requested=%s source=%s db_path=%s fallback_reason=%s)",
                 chosen,
                 requested,
                 source,
+                db_path,
                 fallback_reason,
             )
         else:
             logger.info(
-                "state backend: %s (source=%s)", chosen, source
+                "state backend: %s (source=%s db_path=%s)", chosen, source, db_path
             )
 
 

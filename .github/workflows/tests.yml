@@ -125,6 +125,7 @@ jobs:
         run: |
           source .venv/bin/activate
           python -m pytest tests/rust/ tests/parity/state/test_diagnostics.py \
+            tests/parity/state/test_cli_smoke.py \
             -v --tb=short
         env:
           OPENROUTER_API_KEY: ""
