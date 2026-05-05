@@ -318,10 +318,11 @@ epics:
         story: Benchmark Rust state store against Python baseline
         python_paths:
           - hermes_state.py
-        rust_target: crates/hermes-state/benches/
-        status: planned
-        ci_gate: scripts/bench_state.sh (planned)
-        notes: Objective perf data before defaulting to Rust.
+          - scripts/bench_state.py
+        rust_target: scripts/bench_state.py (drives Python + Rust subprocess + Rust daemon)
+        status: tested
+        ci_gate: tests/parity/state/test_bench_harness.py
+        notes: Headline numbers (M2 Pro, 30 create+append pairs per backend) — Python 0.29 ms/op (3471 ops/s) baseline, subprocess 270.30 ms/op (3.7 ops/s, 941x slower than Python — unviable), daemon 0.36 ms/op (2745 ops/s, 1.26x slower than Python — acceptable for the IPC cost). Validates the cutover argument that the daemon brings Rust within reasonable distance of Python while subprocess is a non-starter.
 
   - id: hermes-te4
     name: Production state-store cutover

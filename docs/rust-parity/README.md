@@ -22,10 +22,10 @@ Tracks the migration of Hermes subsystems from Python to Rust. Source of truth: 
 
 | Status | Count | Share |
 | --- | ---: | ---: |
-| `planned` | 21 | 66% |
+| `planned` | 20 | 62% |
 | `in_progress` | 3 | 9% |
 | `ported` | 0 | 0% |
-| `tested` | 8 | 25% |
+| `tested` | 9 | 28% |
 | `production_wired` | 0 | 0% |
 | `default` | 0 | 0% |
 | `deferred` | 0 | 0% |
@@ -133,8 +133,8 @@ Replace the cargo-subprocess probe with a real production boundary.
 | | _Daemon handles connections concurrently (thread-per-connection with a shared Mutex<SessionStore>) so a long-lived client never blocks others. SQLite remains single-writer through the mutex, which sidesteps the multi-process WAL retry-with-jitter loop the Python SessionDB needs. 8 concurrent writers x 10 ops each round-trip without data loss; per-thread FIFO ordering preserved; bad ops from one client do not taint others._ |  |  |  |  |
 | `hermes-izz.3` | State backend observability and rollback diagnostics | `in_progress` | `hermes_state_rust.py`<br>`hermes_state_factory.py` | `crates/hermes-state` | `tests/parity/state/test_diagnostics.py` |
 | | _RustSessionDB.diagnostics() exposes backend, boundary, db_path, schema_version, op_count, error_count, last_error. Factory merges adapter snapshot into state_backend_diagnostics(db). Rollback diagnostics still pending._ |  |  |  |  |
-| `hermes-izz.4` | Benchmark Rust state store against Python baseline | `planned` | `hermes_state.py` | `crates/hermes-state/benches/` | `scripts/bench_state.sh (planned)` |
-| | _Objective perf data before defaulting to Rust._ |  |  |  |  |
+| `hermes-izz.4` | Benchmark Rust state store against Python baseline | `tested` | `hermes_state.py`<br>`scripts/bench_state.py` | `scripts/bench_state.py (drives Python + Rust subprocess + Rust daemon)` | `tests/parity/state/test_bench_harness.py` |
+| | _Headline numbers (M2 Pro, 30 create+append pairs per backend) — Python 0.29 ms/op (3471 ops/s) baseline, subprocess 270.30 ms/op (3.7 ops/s, 941x slower than Python — unviable), daemon 0.36 ms/op (2745 ops/s, 1.26x slower than Python — acceptable for the IPC cost). Validates the cutover argument that the daemon brings Rust within reasonable distance of Python while subprocess is a non-starter._ |  |  |  |  |
 
 ## hermes-te4 — Production state-store cutover
 
