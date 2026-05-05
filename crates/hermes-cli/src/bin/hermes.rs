@@ -1,5 +1,5 @@
 use std::env;
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
 use std::process;
 
 use hermes_agent_core::{
@@ -9,9 +9,10 @@ use hermes_agent_core::{
     ToolResult,
 };
 use hermes_cli::launcher::{
-    is_runtime_info_request, is_rust_agent_runtime_smoke_request, is_rust_gateway_status_request,
-    is_rust_help_request, is_rust_profile_request, is_rust_version_request, python_command,
-    render_rust_help, render_rust_version, runtime_info, select_runtime, RuntimeSelection,
+    is_runtime_info_request, is_rust_agent_runtime_smoke_request, is_rust_config_path_request,
+    is_rust_gateway_status_request, is_rust_help_request, is_rust_profile_request,
+    is_rust_version_request, python_command, render_rust_help, render_rust_version, runtime_info,
+    select_runtime, RuntimeSelection,
 };
 use hermes_cli::{
     gateway_status, list_profiles, profile_status, render_gateway_status, render_profile_list,
@@ -88,6 +89,16 @@ fn run_rust(args: &[OsString]) -> i32 {
 
     if is_rust_agent_runtime_smoke_request(args) {
         return run_agent_runtime_smoke();
+    }
+
+    if is_rust_config_path_request(args) {
+        let filename = if args.get(1).is_some_and(|arg| arg == OsStr::new("env-path")) {
+            ".env"
+        } else {
+            "config.yaml"
+        };
+        println!("{}", profile_context.hermes_home.join(filename).display());
+        return 0;
     }
 
     if is_rust_gateway_status_request(args) {

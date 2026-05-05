@@ -87,6 +87,14 @@ pub fn is_rust_gateway_status_request(args: &[OsString]) -> bool {
         && args.get(1).is_some_and(|arg| arg == OsStr::new("status"))
 }
 
+pub fn is_rust_config_path_request(args: &[OsString]) -> bool {
+    args.len() == 2
+        && args.first().is_some_and(|arg| arg == OsStr::new("config"))
+        && args
+            .get(1)
+            .is_some_and(|arg| arg == OsStr::new("path") || arg == OsStr::new("env-path"))
+}
+
 pub fn is_rust_profile_status_request(args: &[OsString]) -> bool {
     args.len() == 1 && args.first().is_some_and(|arg| arg == OsStr::new("profile"))
 }
@@ -98,6 +106,7 @@ pub fn is_rust_profile_request(args: &[OsString]) -> bool {
 pub fn render_rust_help() -> &'static str {
     "Hermes Agent Rust launcher\n\n\
 Usage:\n  hermes [--runtime-info]\n  HERMES_RUNTIME=python hermes [args...]\n  HERMES_RUNTIME=rust hermes version\n  HERMES_RUNTIME=rust hermes agent-runtime-smoke\n\
+  HERMES_RUNTIME=rust hermes config path\n\
   HERMES_RUNTIME=rust hermes gateway status\n\
   HERMES_RUNTIME=rust hermes profile\n\n\
 Runtime selection:\n  HERMES_RUNTIME=python  Run the production Python runtime through hermes_cli.main\n  HERMES_RUNTIME=rust    Run Rust-owned commands that have landed so far\n  HERMES_RUNTIME=auto    Use the rollout default\n\n\
@@ -198,6 +207,14 @@ mod tests {
         assert!(is_rust_gateway_status_request(&[
             OsString::from("gateway"),
             OsString::from("status")
+        ]));
+        assert!(is_rust_config_path_request(&[
+            OsString::from("config"),
+            OsString::from("path")
+        ]));
+        assert!(is_rust_config_path_request(&[
+            OsString::from("config"),
+            OsString::from("env-path")
         ]));
         assert!(is_rust_profile_status_request(&[OsString::from("profile")]));
         assert!(is_rust_profile_request(&[

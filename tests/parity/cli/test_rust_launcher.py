@@ -236,6 +236,36 @@ def test_rust_runtime_gateway_status_health_lines_match_python(tmp_path: Path) -
     assert rust.stdout == python.stdout
 
 
+def test_rust_runtime_config_paths_match_python(tmp_path: Path) -> None:
+    hermes_home = tmp_path / "hermes-home"
+    hermes_home.mkdir()
+
+    env = {"HERMES_HOME": str(hermes_home)}
+    for subcommand in ("path", "env-path"):
+        rust = _run_launcher("config", subcommand, env={**env, "HERMES_RUNTIME": "rust"})
+        python = _run_python_cli("config", subcommand, env=env)
+
+        assert rust.returncode == 0, rust.stderr
+        assert python.returncode == 0, python.stderr
+        assert rust.stdout == python.stdout
+
+
+def test_rust_runtime_config_paths_respect_profile_flag(tmp_path: Path) -> None:
+    hermes_root = tmp_path / "hermes-root"
+    profile_home = hermes_root / "profiles" / "coder"
+    profile_home.mkdir(parents=True)
+
+    env = {"HERMES_HOME": str(hermes_root)}
+    rust = _run_launcher(
+        "-p", "coder", "config", "path", env={**env, "HERMES_RUNTIME": "rust"}
+    )
+    python = _run_python_cli("-p", "coder", "config", "path", env=env)
+
+    assert rust.returncode == 0, rust.stderr
+    assert python.returncode == 0, python.stderr
+    assert rust.stdout == python.stdout
+
+
 def test_rust_runtime_rejects_unported_commands_without_python_import() -> None:
     result = _run_launcher("gateway", "run", env={"HERMES_RUNTIME": "rust"})
 
