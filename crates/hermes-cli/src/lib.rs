@@ -22,9 +22,9 @@ pub use integrations_status::{cron_status, render_cron_status, CronStatus};
 pub use logs::{run_logs_command, LogsOutcome};
 pub use plugins::{run_plugins_command, PluginsOutcome};
 pub use profile::{
-    list_profiles, profile_status, render_profile_list, render_profile_show, render_profile_status,
-    resolve_rust_profile_context, set_active_profile, show_profile, ProfileInfo, ProfileStatus,
-    RustProfileContext,
+    delete_profile_yes, list_profiles, profile_status, render_profile_list, render_profile_show,
+    render_profile_status, resolve_rust_profile_context, set_active_profile, show_profile,
+    ProfileInfo, ProfileStatus, RustProfileContext,
 };
 pub use setup::{
     apply_model_choice, determine_api_mode, provider_setup_def, secret_storage_plan,

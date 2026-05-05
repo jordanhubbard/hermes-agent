@@ -16,10 +16,10 @@ use hermes_cli::launcher::{
     render_rust_version, runtime_info, select_runtime, RuntimeSelection,
 };
 use hermes_cli::{
-    cron_status, gateway_status, list_profiles, profile_status, render_cron_status,
-    render_gateway_status, render_profile_list, render_profile_show, render_profile_status,
-    resolve_rust_profile_context, run_config_set_command, run_logs_command, run_plugins_command,
-    run_skills_command, set_active_profile, show_profile, RustProfileContext,
+    cron_status, delete_profile_yes, gateway_status, list_profiles, profile_status,
+    render_cron_status, render_gateway_status, render_profile_list, render_profile_show,
+    render_profile_status, resolve_rust_profile_context, run_config_set_command, run_logs_command,
+    run_plugins_command, run_skills_command, set_active_profile, show_profile, RustProfileContext,
 };
 use serde_json::json;
 use std::collections::VecDeque;
@@ -196,6 +196,32 @@ fn run_profile_command(context: &RustProfileContext, args: &[OsString]) -> i32 {
                 return 2;
             };
             match set_active_profile(context, &name) {
+                Ok(message) => {
+                    print!("{message}");
+                    0
+                }
+                Err(message) => {
+                    println!("Error: {message}");
+                    1
+                }
+            }
+        }
+        Some("delete") => {
+            let Some(name) = args.get(2).map(|arg| arg.to_string_lossy().into_owned()) else {
+                eprintln!("usage: hermes profile delete <profile_name> -y");
+                return 2;
+            };
+            let yes = args
+                .iter()
+                .skip(3)
+                .any(|arg| arg == OsStr::new("-y") || arg == OsStr::new("--yes"));
+            if !yes {
+                eprintln!(
+                    "HERMES_RUNTIME=rust selected, but interactive profile delete confirmation is not Rust-owned yet. Use HERMES_RUNTIME=python for the rollout fallback."
+                );
+                return 78;
+            }
+            match delete_profile_yes(context, &name) {
                 Ok(message) => {
                     print!("{message}");
                     0

@@ -309,6 +309,66 @@ pub fn set_active_profile(context: &RustProfileContext, name: &str) -> Result<St
     }
 }
 
+pub fn delete_profile_yes(context: &RustProfileContext, name: &str) -> Result<String, String> {
+    let canon = normalize_profile_name(name)?;
+    if canon == "default" {
+        return Err(
+            "Cannot delete the default profile (~/.hermes).\nTo remove everything, use: hermes uninstall"
+                .to_string(),
+        );
+    }
+    let default_root = PathBuf::from(&context.paths.default_hermes_root);
+    let profiles_root = PathBuf::from(&context.paths.profiles_root);
+    let profile_dir = profile_dir(&default_root, &profiles_root, &canon);
+    if !profile_dir.is_dir() {
+        return Err(format!("Profile '{canon}' does not exist."));
+    }
+
+    let (model, provider) = read_config_model(&profile_dir);
+    let skill_count = count_skills(&profile_dir);
+    let mut output = String::new();
+    output.push_str(&format!("\nProfile: {canon}\n"));
+    output.push_str(&format!("Path:    {}\n", profile_dir.display()));
+    if let Some(model) = model {
+        output.push_str("Model:   ");
+        output.push_str(&model);
+        if let Some(provider) = provider {
+            output.push_str(" (");
+            output.push_str(&provider);
+            output.push(')');
+        }
+        output.push('\n');
+    }
+    if skill_count > 0 {
+        output.push_str(&format!("Skills:  {skill_count}\n"));
+    }
+    output.push_str("\nThis will permanently delete:\n");
+    output.push_str("  • All config, API keys, memories, sessions, skills, cron jobs\n");
+
+    if let Some(wrapper_path) = alias_path_for(&canon).map(PathBuf::from) {
+        if remove_wrapper_script(&wrapper_path) {
+            output.push_str(&format!("✓ Removed {}\n", wrapper_path.display()));
+        }
+    }
+
+    fs::remove_dir_all(&profile_dir)
+        .map_err(|err| format!("Could not remove {}: {err}", profile_dir.display()))?;
+    output.push_str(&format!("✓ Removed {}\n", profile_dir.display()));
+
+    let active_profile_path = PathBuf::from(&context.paths.active_profile_path);
+    if read_sticky_active_profile(&active_profile_path)?.as_deref() == Some(canon.as_str()) {
+        if let Err(err) = fs::remove_file(&active_profile_path) {
+            if err.kind() != std::io::ErrorKind::NotFound {
+                return Err(format!("could not clear active profile: {err}"));
+            }
+        }
+        output.push_str("✓ Active profile reset to default\n");
+    }
+
+    output.push_str(&format!("\nProfile '{canon}' deleted.\n"));
+    Ok(output)
+}
+
 fn profile_info(name: &str, path: &Path, is_default: bool) -> ProfileInfo {
     let (model, provider) = read_config_model(path);
     let alias_path = if is_default {
@@ -536,6 +596,16 @@ fn alias_path_for(profile: &str) -> Option<String> {
     }
     let path = home_dir().join(".local").join("bin").join(profile);
     path.exists().then(|| path.to_string_lossy().to_string())
+}
+
+fn remove_wrapper_script(path: &Path) -> bool {
+    let Ok(content) = fs::read_to_string(path) else {
+        return false;
+    };
+    if !content.contains("hermes -p") {
+        return false;
+    }
+    fs::remove_file(path).is_ok()
 }
 
 #[cfg(test)]

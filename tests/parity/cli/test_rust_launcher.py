@@ -207,6 +207,35 @@ def test_rust_runtime_profile_use_matches_python(tmp_path: Path) -> None:
     assert (python_root / "active_profile").read_text() == "coder\n"
 
 
+def test_rust_runtime_profile_delete_yes_matches_python(tmp_path: Path) -> None:
+    rust_root = tmp_path / "rust-root"
+    python_root = tmp_path / "python-root"
+    for root in (rust_root, python_root):
+        profile_home = root / "profiles" / "coder"
+        _write_skill(profile_home, "coder-skill")
+        (profile_home / "config.yaml").write_text("model:\n  default: gpt-delete\n")
+        (root / "active_profile").write_text("coder\n")
+
+    rust = _run_launcher(
+        "profile",
+        "delete",
+        "coder",
+        "-y",
+        env={"HERMES_HOME": str(rust_root), "HERMES_RUNTIME": "rust"},
+    )
+    python = _run_python_cli(
+        "profile", "delete", "coder", "-y", env={"HERMES_HOME": str(python_root)}
+    )
+
+    assert rust.returncode == 0, rust.stderr
+    assert python.returncode == 0, python.stderr
+    assert rust.stdout.replace(str(rust_root), str(python_root)) == python.stdout
+    assert not (rust_root / "profiles" / "coder").exists()
+    assert not (python_root / "profiles" / "coder").exists()
+    assert not (rust_root / "active_profile").exists()
+    assert not (python_root / "active_profile").exists()
+
+
 def test_rust_runtime_gateway_status_matches_python_not_running(tmp_path: Path) -> None:
     hermes_home = tmp_path / "hermes-home"
     hermes_home.mkdir()
