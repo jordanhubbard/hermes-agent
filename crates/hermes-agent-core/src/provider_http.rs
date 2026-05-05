@@ -12,8 +12,8 @@ use serde_json::Value;
 use crate::message::Message;
 use crate::provider::{ApiMode, ProviderRouting};
 use crate::provider_wire::{
-    build_provider_request, classify_provider_error, parse_provider_response,
-    ParsedProviderResponse, ProviderErrorClass, ProviderRequestOptions,
+    build_provider_request, classify_provider_error, parse_provider_response, parse_stream_delta,
+    ParsedProviderResponse, ProviderErrorClass, ProviderRequestOptions, StreamDelta,
 };
 use crate::tool::ToolDefinition;
 
@@ -52,6 +52,23 @@ pub struct ProviderHttpResponse {
     pub raw_json: Value,
     /// Parsed assistant turn and usage.
     pub parsed: ParsedProviderResponse,
+}
+
+/// Streaming provider HTTP response collected from server-sent events.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ProviderStreamResponse {
+    /// Final URL called.
+    pub url: String,
+    /// HTTP status code.
+    pub status: u16,
+    /// Normalized deltas in arrival order.
+    pub deltas: Vec<StreamDelta>,
+    /// Concatenated content deltas.
+    pub content: String,
+    /// Concatenated reasoning deltas.
+    pub reasoning: String,
+    /// Whether a terminal event was observed.
+    pub done: bool,
 }
 
 /// Provider HTTP failure.
@@ -101,43 +118,7 @@ pub fn execute_provider_request(
         message: format!("provider request did not serialize: {err}"),
     })?;
 
-    let agent = ureq::AgentBuilder::new()
-        .timeout(Duration::from_secs(http_options.timeout_secs))
-        .build();
-    let mut request = agent.post(&url).set("content-type", "application/json");
-    if let Some(api_key) = http_options
-        .api_key
-        .as_deref()
-        .filter(|value| !value.is_empty())
-    {
-        request = request.set("authorization", &format!("Bearer {api_key}"));
-    }
-    for (name, value) in &routing.extra_headers {
-        request = request.set(name, value);
-    }
-
-    let response = match request.send_string(&body_text) {
-        Ok(response) => response,
-        Err(ureq::Error::Status(status, response)) => {
-            let message = response
-                .into_string()
-                .unwrap_or_else(|err| format!("failed to read provider error body: {err}"));
-            return Err(ProviderHttpError {
-                url: Some(url),
-                status: Some(status),
-                class: classify_provider_error(Some(status), &message),
-                message,
-            });
-        }
-        Err(ureq::Error::Transport(err)) => {
-            return Err(ProviderHttpError {
-                url: Some(url),
-                status: None,
-                class: ProviderErrorClass::Transient,
-                message: err.to_string(),
-            });
-        }
-    };
+    let response = send_provider_post(&url, routing, http_options, &body_text)?;
 
     let status = response.status();
     let raw_text = response.into_string().map_err(|err| ProviderHttpError {
@@ -167,6 +148,148 @@ pub fn execute_provider_request(
         raw_json,
         parsed,
     })
+}
+
+/// Execute one streaming provider request and collect SSE deltas.
+pub fn execute_provider_stream(
+    messages: &[Message],
+    tools: &[ToolDefinition],
+    routing: &ProviderRouting,
+    request_options: &ProviderRequestOptions,
+    http_options: &ProviderHttpOptions,
+) -> Result<ProviderStreamResponse, ProviderHttpError> {
+    let mut stream_options = request_options.clone();
+    stream_options.stream = true;
+
+    let url = provider_url(routing).map_err(|message| ProviderHttpError {
+        url: None,
+        status: None,
+        class: ProviderErrorClass::Fatal,
+        message,
+    })?;
+    let body = build_provider_request(messages, tools, routing, &stream_options);
+    let body_text = serde_json::to_string(&body).map_err(|err| ProviderHttpError {
+        url: Some(url.clone()),
+        status: None,
+        class: ProviderErrorClass::Fatal,
+        message: format!("provider stream request did not serialize: {err}"),
+    })?;
+
+    let response = send_provider_post(&url, routing, http_options, &body_text)?;
+    let status = response.status();
+    let raw_text = response.into_string().map_err(|err| ProviderHttpError {
+        url: Some(url.clone()),
+        status: Some(status),
+        class: ProviderErrorClass::Transient,
+        message: format!("failed to read provider stream body: {err}"),
+    })?;
+
+    let mut deltas = Vec::new();
+    let mut content = String::new();
+    let mut reasoning = String::new();
+    let mut done = false;
+    for event in parse_sse_json_events(&raw_text) {
+        let delta = parse_stream_delta(routing.api_mode, &event);
+        if let Some(text) = &delta.content_delta {
+            content.push_str(text);
+        }
+        if let Some(text) = &delta.reasoning_delta {
+            reasoning.push_str(text);
+        }
+        done |= delta.done;
+        deltas.push(delta);
+    }
+
+    Ok(ProviderStreamResponse {
+        url,
+        status,
+        deltas,
+        content,
+        reasoning,
+        done,
+    })
+}
+
+fn send_provider_post(
+    url: &str,
+    routing: &ProviderRouting,
+    http_options: &ProviderHttpOptions,
+    body_text: &str,
+) -> Result<ureq::Response, ProviderHttpError> {
+    let agent = ureq::AgentBuilder::new()
+        .timeout(Duration::from_secs(http_options.timeout_secs))
+        .build();
+    let mut request = agent.post(url).set("content-type", "application/json");
+    if let Some(api_key) = http_options
+        .api_key
+        .as_deref()
+        .filter(|value| !value.is_empty())
+    {
+        request = request.set("authorization", &format!("Bearer {api_key}"));
+    }
+    for (name, value) in &routing.extra_headers {
+        request = request.set(name, value);
+    }
+
+    match request.send_string(body_text) {
+        Ok(response) => Ok(response),
+        Err(ureq::Error::Status(status, response)) => {
+            let message = response
+                .into_string()
+                .unwrap_or_else(|err| format!("failed to read provider error body: {err}"));
+            Err(ProviderHttpError {
+                url: Some(url.to_string()),
+                status: Some(status),
+                class: classify_provider_error(Some(status), &message),
+                message,
+            })
+        }
+        Err(ureq::Error::Transport(err)) => Err(ProviderHttpError {
+            url: Some(url.to_string()),
+            status: None,
+            class: ProviderErrorClass::Transient,
+            message: err.to_string(),
+        }),
+    }
+}
+
+fn parse_sse_json_events(raw_text: &str) -> Vec<Value> {
+    let mut events = Vec::new();
+    let mut current = String::new();
+    for line in raw_text.lines() {
+        let line = line.strip_suffix('\r').unwrap_or(line);
+        if line.is_empty() {
+            push_sse_event(&mut events, &mut current);
+            continue;
+        }
+        let Some(data) = line.strip_prefix("data:") else {
+            continue;
+        };
+        let data = data.trim_start();
+        if !current.is_empty() {
+            current.push('\n');
+        }
+        current.push_str(data);
+    }
+    push_sse_event(&mut events, &mut current);
+    events
+}
+
+fn push_sse_event(events: &mut Vec<Value>, current: &mut String) {
+    let data = current.trim();
+    if data.is_empty() {
+        current.clear();
+        return;
+    }
+    if data == "[DONE]" {
+        events.push(serde_json::json!({"done": true}));
+        current.clear();
+        return;
+    }
+    if let Ok(value) = serde_json::from_str::<Value>(data) {
+        events.push(value);
+    }
+    current.clear();
 }
 
 fn provider_url(routing: &ProviderRouting) -> Result<String, String> {

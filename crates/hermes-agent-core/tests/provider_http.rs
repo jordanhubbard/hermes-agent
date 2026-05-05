@@ -5,8 +5,8 @@ use std::sync::mpsc;
 use std::thread;
 
 use hermes_agent_core::{
-    execute_provider_request, ApiMode, Message, ProviderErrorClass, ProviderHttpOptions,
-    ProviderRequestOptions, ProviderRouting,
+    execute_provider_request, execute_provider_stream, ApiMode, Message, ProviderErrorClass,
+    ProviderHttpOptions, ProviderRequestOptions, ProviderRouting,
 };
 use serde_json::{json, Value};
 
@@ -33,6 +33,18 @@ fn mock_server(
     response_status: u16,
     response_body: Value,
 ) -> (String, mpsc::Receiver<CapturedRequest>) {
+    mock_raw_server(
+        response_status,
+        "application/json",
+        serde_json::to_string(&response_body).expect("response body serializes"),
+    )
+}
+
+fn mock_raw_server(
+    response_status: u16,
+    content_type: &'static str,
+    response_body: String,
+) -> (String, mpsc::Receiver<CapturedRequest>) {
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind mock server");
     let addr = listener.local_addr().expect("mock server address");
     let (tx, rx) = mpsc::channel();
@@ -44,13 +56,12 @@ fn mock_server(
             body: serde_json::from_slice(&body).expect("request body is JSON"),
         })
         .expect("send captured request");
-        let body = serde_json::to_string(&response_body).expect("response body serializes");
         let reason = if response_status == 200 { "OK" } else { "ERR" };
         write!(
             stream,
-            "HTTP/1.1 {response_status} {reason}\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
-            body.len(),
-            body
+            "HTTP/1.1 {response_status} {reason}\r\ncontent-type: {content_type}\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+            response_body.len(),
+            response_body
         )
         .expect("write response");
     });
@@ -163,4 +174,37 @@ fn classifies_provider_http_errors() {
     assert_eq!(err.status, Some(429));
     assert_eq!(err.class, ProviderErrorClass::RateLimit);
     assert!(err.message.contains("rate limit"));
+}
+
+#[test]
+fn executes_streaming_chat_completions_request_against_mock_provider() {
+    let (base_url, rx) = mock_raw_server(
+        200,
+        "text/event-stream",
+        concat!(
+            "data: {\"choices\":[{\"delta\":{\"content\":\"hel\",\"reasoning_content\":\"r1\"},\"finish_reason\":null}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{\"content\":\"lo\"},\"finish_reason\":\"stop\"}]}\n\n",
+            "data: [DONE]\n\n"
+        )
+        .to_string(),
+    );
+
+    let result = execute_provider_stream(
+        &[Message::user("hello")],
+        &[],
+        &routing(base_url),
+        &ProviderRequestOptions::default(),
+        &ProviderHttpOptions::default(),
+    )
+    .expect("streaming provider request succeeds");
+
+    assert_eq!(result.status, 200);
+    assert_eq!(result.content, "hello");
+    assert_eq!(result.reasoning, "r1");
+    assert!(result.done);
+    assert_eq!(result.deltas.len(), 3);
+
+    let captured = rx.recv().expect("captured request");
+    assert_eq!(captured.body["stream"], true);
+    assert_eq!(captured.body["messages"][0]["content"], "hello");
 }

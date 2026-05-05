@@ -423,10 +423,10 @@ epics:
           - run_agent.py
           - agent/
           - model_tools.py
-        rust_target: crates/hermes-agent-core/src/provider_http.rs
+        rust_target: crates/hermes-agent-core/src/provider_http.rs + crates/hermes-agent-core/src/runtime.rs
         status: in_progress
-        ci_gate: cargo test -p hermes-agent-core --test provider_http
-        notes: Non-streaming provider HTTP execution now reuses provider_wire request/response parity and has a mock OpenAI-compatible E2E test for request URL, auth/header forwarding, body shape, parsed assistant response, usage, and 429 retry classification. Remaining blockers include streaming HTTP, credential selection/pools, fallback policy, interrupts, budgets in live loops, compression integration, real tool dispatch, persistence, and lifecycle hooks.
+        ci_gate: cargo test -p hermes-agent-core --test provider_http --test runtime
+        notes: Provider HTTP execution now reuses provider_wire request/response parity and has mock OpenAI-compatible E2E tests for request URL, auth/header forwarding, body shape, parsed assistant response, usage, 429 retry classification, and streaming SSE delta collection. Runtime.rs adds a production-shaped synchronous loop over model/tool/store/hook traits with fallback, interrupt-before-call, budget usage accumulation, compression planning, tool dispatch, persistence callbacks, and lifecycle hooks. Remaining blockers include credential selection/pools, direct Rust state persistence, Python-parity lifecycle hook adapters, and Rust-default launcher E2E.
       - bead: hermes-fpr.4
         story: Port all tool handlers or gate explicit non-removable boundaries
         python_paths:
