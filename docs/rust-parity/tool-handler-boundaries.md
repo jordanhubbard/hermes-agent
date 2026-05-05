@@ -14,6 +14,8 @@ Native Rust handler coverage:
 - `todo` validation, replace/merge semantics, summary counts, and
   post-compression active-task injection formatting
 - `clarify` question/choice validation and result/error envelope shaping
+- `memory` entry threat scanning, add/replace/remove semantics, duplicate
+  handling, char-limit accounting, and frozen system-prompt snapshot behavior
 
 Documented deletion-blocking boundaries:
 
@@ -27,8 +29,8 @@ Documented deletion-blocking boundaries:
   process-global toolset state stay in Python until delegated turns run through
   the Rust agent runtime.
 - `mcp`: dynamically discovered server adapters stay in Python.
-- `memory/session`: memory providers and session search stay in Python until
-  Rust owns the memory/context-engine and session-search path.
+- `memory/session`: session search stays in Python until Rust owns the
+  hermes-state search plus auxiliary summarization path.
 - `media`: optional provider SDKs, local binaries, and binary artifacts stay in
   Python until Rust provider clients or an external media service are selected.
 - `skills`: discovery, frontmatter parsing, install/update/audit, provenance,
