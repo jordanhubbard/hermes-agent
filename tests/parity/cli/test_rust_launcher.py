@@ -70,6 +70,14 @@ def _load_yaml(path: Path) -> dict:
     return yaml.safe_load(path.read_text()) or {}
 
 
+def _write_skill_doc(home: Path, category: str, name: str, description: str) -> None:
+    skill_dir = home / "skills" / category / name
+    skill_dir.mkdir(parents=True, exist_ok=True)
+    (skill_dir / "SKILL.md").write_text(
+        f"---\nname: {name}\ndescription: {description}\n---\n"
+    )
+
+
 def test_runtime_info_reports_default_python_rollout_path() -> None:
     result = _run_launcher("--runtime-info")
 
@@ -448,6 +456,71 @@ def test_rust_runtime_plugins_missing_matches_python(tmp_path: Path) -> None:
     assert rust.returncode == python.returncode == 1
     assert rust.stdout == python.stdout
     assert rust.stderr == python.stderr == ""
+
+
+def test_rust_runtime_skills_list_matches_python_empty_home(tmp_path: Path) -> None:
+    rust_home = tmp_path / "rust-home"
+    python_home = tmp_path / "python-home"
+    rust_home.mkdir()
+    python_home.mkdir()
+
+    rust = _run_launcher(
+        "skills", "list", env={"HERMES_HOME": str(rust_home), "HERMES_RUNTIME": "rust"}
+    )
+    python = _run_python_cli("skills", "list", env={"HERMES_HOME": str(python_home)})
+
+    assert rust.returncode == 0, rust.stderr
+    assert python.returncode == 0, python.stderr
+    assert rust.stdout == python.stdout
+    for home in (rust_home, python_home):
+        assert (home / "skills" / ".hub" / "lock.json").exists()
+        assert (home / "skills" / ".hub" / "quarantine").is_dir()
+        assert (home / "skills" / ".hub" / "index-cache").is_dir()
+
+
+def test_rust_runtime_skills_list_sources_match_python(tmp_path: Path) -> None:
+    rust_home = tmp_path / "rust-home"
+    python_home = tmp_path / "python-home"
+    for home in (rust_home, python_home):
+        _write_skill_doc(home, "x", "hub-skill", "hub")
+        _write_skill_doc(home, "x", "builtin-skill", "builtin")
+        _write_skill_doc(home, "x", "local-skill", "local")
+        (home / "skills" / ".hub").mkdir(parents=True, exist_ok=True)
+        (home / "skills" / ".bundled_manifest").write_text("builtin-skill:abc123\n")
+        (home / "skills" / ".hub" / "lock.json").write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "installed": {
+                        "hub-skill": {
+                            "source": "github",
+                            "identifier": "id",
+                            "trust_level": "community",
+                            "scan_verdict": "pass",
+                            "content_hash": "hash",
+                            "install_path": "x/hub-skill",
+                            "files": [],
+                        }
+                    },
+                }
+            )
+        )
+        (home / "config.yaml").write_text("skills:\n  disabled:\n    - hub-skill\n")
+
+    rust_env = {"HERMES_HOME": str(rust_home), "HERMES_RUNTIME": "rust"}
+    python_env = {"HERMES_HOME": str(python_home)}
+    for args in (
+        ("skills", "list"),
+        ("skills", "list", "--enabled-only"),
+        ("skills", "list", "--source", "local"),
+        ("skills", "list", "--source=hub"),
+    ):
+        rust = _run_launcher(*args, env=rust_env)
+        python = _run_python_cli(*args, env=python_env)
+
+        assert rust.returncode == 0, rust.stderr
+        assert python.returncode == 0, python.stderr
+        assert rust.stdout == python.stdout
 
 
 def test_rust_runtime_rejects_unported_commands_without_python_import() -> None:

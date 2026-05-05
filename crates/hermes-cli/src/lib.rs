@@ -10,6 +10,7 @@ pub mod logs;
 pub mod plugins;
 pub mod profile;
 pub mod setup;
+pub mod skills;
 
 pub use display::{
     builtin_skin_surfaces, logging_plan, render_status, CliStatusInput, LoggingPlan, SkinSurface,
@@ -28,6 +29,7 @@ pub use setup::{
     setup_snapshot, supports_same_provider_pool_setup, ModelChoicePlan, ProviderSetupDef,
     SecretStoragePlan, SetupSnapshot,
 };
+pub use skills::{run_skills_command, SkillsOutcome};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 pub struct CommandDef {

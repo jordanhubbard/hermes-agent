@@ -117,6 +117,11 @@ pub fn is_rust_plugins_request(args: &[OsString]) -> bool {
         )
 }
 
+pub fn is_rust_skills_request(args: &[OsString]) -> bool {
+    args.first().is_some_and(|arg| arg == OsStr::new("skills"))
+        && args.get(1).is_some_and(|arg| arg == OsStr::new("list"))
+}
+
 pub fn is_rust_profile_status_request(args: &[OsString]) -> bool {
     args.len() == 1 && args.first().is_some_and(|arg| arg == OsStr::new("profile"))
 }
@@ -133,6 +138,7 @@ Usage:\n  hermes [--runtime-info]\n  HERMES_RUNTIME=python hermes [args...]\n  H
   HERMES_RUNTIME=rust hermes gateway status\n\
   HERMES_RUNTIME=rust hermes logs [list|agent|errors|gateway]\n\
   HERMES_RUNTIME=rust hermes plugins [list|enable|disable]\n\
+  HERMES_RUNTIME=rust hermes skills list\n\
   HERMES_RUNTIME=rust hermes profile\n\n\
 Runtime selection:\n  HERMES_RUNTIME=python  Run the production Python runtime through hermes_cli.main\n  HERMES_RUNTIME=rust    Run Rust-owned commands that have landed so far\n  HERMES_RUNTIME=auto    Use the rollout default\n\n\
 The Rust launcher owns process selection. Full Rust chat, gateway, TUI, dashboard,\n\
@@ -254,6 +260,10 @@ mod tests {
             OsString::from("plugins"),
             OsString::from("enable"),
             OsString::from("disk-cleanup")
+        ]));
+        assert!(is_rust_skills_request(&[
+            OsString::from("skills"),
+            OsString::from("list")
         ]));
         assert!(is_rust_profile_status_request(&[OsString::from("profile")]));
         assert!(is_rust_profile_request(&[
