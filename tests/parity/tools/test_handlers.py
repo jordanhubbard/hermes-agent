@@ -186,6 +186,7 @@ def test_all_core_tools_are_native_or_explicit_boundaries() -> None:
 
     assert snapshot["uncovered_core_tools"] == []
     assert "todo" in snapshot["native_tools"]
+    assert "clarify" in snapshot["native_tools"]
     assert "read_file" in snapshot["native_tools"]
     assert "execute_code" in snapshot["boundary_tools"]
     assert "kanban_create" in snapshot["boundary_tools"]
@@ -194,6 +195,7 @@ def test_all_core_tools_are_native_or_explicit_boundaries() -> None:
 
 
 def _python_agent_handler_snapshot() -> dict[str, Any]:
+    from tools.clarify_tool import clarify_tool
     from tools.todo_tool import TodoStore, todo_tool
 
     store = TodoStore()
@@ -221,6 +223,25 @@ def _python_agent_handler_snapshot() -> dict[str, Any]:
     )
     snapshot["todo_read"] = json.loads(todo_tool(store=store))
     snapshot["todo_injection"] = store.format_for_injection()
+    snapshot["clarify_missing_question"] = json.loads(
+        clarify_tool("", callback=None)
+    )
+    snapshot["clarify_unavailable"] = json.loads(
+        clarify_tool("Need input?", callback=None)
+    )
+    snapshot["clarify_choices"] = json.loads(
+        clarify_tool(
+            " Pick one ",
+            choices=[" A ", "", 2, "C", "D", "E"],
+            callback=lambda _question, _choices: " A ",
+        )
+    )
+    snapshot["clarify_callback_error"] = json.loads(
+        clarify_tool(
+            "Need input?",
+            callback=lambda _question, _choices: (_ for _ in ()).throw(Exception("callback failed")),
+        )
+    )
     return snapshot
 
 
@@ -307,11 +328,11 @@ def _documented_python_boundaries() -> list[dict[str, Any]]:
         {
             "family": "clarify",
             "boundary": "platform_interaction_boundary",
-            "tools": ["clarify"],
+            "tools": [],
             "parity_gate": "tests/parity/tools/test_handlers.py::test_all_core_tools_are_native_or_explicit_boundaries",
             "deletion_blocker": True,
             "deletion_plan": "Move clarify validation plus CLI/gateway prompt callbacks into Rust platform runtimes.",
-            "reason": "Clarify is a platform callback rather than a normal side-effect tool; the UI interaction path is still Python-owned in CLI and gateway runtimes.",
+            "reason": "Clarify validation and result shaping are native Rust; the UI interaction callback is still Python-owned in CLI and gateway runtimes.",
         },
         {
             "family": "cron/messaging/homeassistant",

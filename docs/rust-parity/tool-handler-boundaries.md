@@ -13,6 +13,7 @@ Native Rust handler coverage:
 - sensitive write denial for protected system paths
 - `todo` validation, replace/merge semantics, summary counts, and
   post-compression active-task injection formatting
+- `clarify` question/choice validation and result/error envelope shaping
 
 Documented deletion-blocking boundaries:
 
@@ -32,8 +33,8 @@ Documented deletion-blocking boundaries:
   Python until Rust provider clients or an external media service are selected.
 - `skills`: discovery, frontmatter parsing, install/update/audit, provenance,
   config prompts, and prompt-cache-aware injection stay in Python.
-- `clarify`: UI callbacks stay in the Python CLI/gateway platform layer until
-  those runtimes are Rust-owned.
+- `clarify`: only the UI callbacks stay in the Python CLI/gateway platform
+  layer until those runtimes are Rust-owned.
 - `cron/messaging/homeassistant`: scheduler state, gateway delivery, and
   Home Assistant network clients stay behind Python integration runtimes.
 - `kanban`: dispatcher task state and worker ownership checks stay in Python

@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 use serde_json::{json, Value};
 
+use crate::clarify::{clarify_response, ClarifyCallback};
 use crate::todo::{todo_response, TodoStore};
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -65,6 +66,7 @@ pub fn handler_parity_snapshot(root: &Path) -> io::Result<HandlerParitySnapshot>
     let native_agent_handlers = native_agent_handler_snapshot();
     let python_boundaries = documented_python_boundaries();
     let native_tools = vec![
+        "clarify".to_string(),
         "patch".to_string(),
         "read_file".to_string(),
         "search_files".to_string(),
@@ -388,11 +390,11 @@ fn documented_python_boundaries() -> Vec<ToolHandlerBoundary> {
         ToolHandlerBoundary {
             family: "clarify".to_string(),
             boundary: "platform_interaction_boundary".to_string(),
-            tools: vec!["clarify".to_string()],
+            tools: Vec::new(),
             parity_gate: "tests/parity/tools/test_handlers.py::test_all_core_tools_are_native_or_explicit_boundaries".to_string(),
             deletion_blocker: true,
             deletion_plan: "Move clarify validation plus CLI/gateway prompt callbacks into Rust platform runtimes.".to_string(),
-            reason: "Clarify is a platform callback rather than a normal side-effect tool; the UI interaction path is still Python-owned in CLI and gateway runtimes.".to_string(),
+            reason: "Clarify validation and result shaping are native Rust; the UI interaction callback is still Python-owned in CLI and gateway runtimes.".to_string(),
         },
         ToolHandlerBoundary {
             family: "cron/messaging/homeassistant".to_string(),
@@ -463,6 +465,37 @@ fn native_agent_handler_snapshot() -> BTreeMap<String, Value> {
     snapshot.insert(
         "todo_injection".to_string(),
         json!(store.format_for_injection()),
+    );
+    snapshot.insert(
+        "clarify_missing_question".to_string(),
+        clarify_response("", None, ClarifyCallback::Unavailable),
+    );
+    snapshot.insert(
+        "clarify_unavailable".to_string(),
+        clarify_response("Need input?", None, ClarifyCallback::Unavailable),
+    );
+    snapshot.insert(
+        "clarify_choices".to_string(),
+        clarify_response(
+            " Pick one ",
+            Some(&[
+                json!(" A "),
+                json!(""),
+                json!(2),
+                json!("C"),
+                json!("D"),
+                json!("E"),
+            ]),
+            ClarifyCallback::Response(" A ".to_string()),
+        ),
+    );
+    snapshot.insert(
+        "clarify_callback_error".to_string(),
+        clarify_response(
+            "Need input?",
+            None,
+            ClarifyCallback::Error("callback failed".to_string()),
+        ),
     );
     snapshot
 }
