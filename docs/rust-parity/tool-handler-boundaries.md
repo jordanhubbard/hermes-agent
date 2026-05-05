@@ -16,6 +16,9 @@ Native Rust handler coverage:
 - `clarify` question/choice validation and result/error envelope shaping
 - `memory` entry threat scanning, add/replace/remove semantics, duplicate
   handling, char-limit accounting, and frozen system-prompt snapshot behavior
+- `skills_list` and `skill_view` for local read-only skill discovery,
+  frontmatter/tag/category parsing, linked-file discovery, linked-file reads,
+  missing-file suggestions, not-found suggestions, and traversal denial
 
 Documented deletion-blocking boundaries:
 
@@ -33,8 +36,9 @@ Documented deletion-blocking boundaries:
   hermes-state search plus auxiliary summarization path.
 - `media`: optional provider SDKs, local binaries, and binary artifacts stay in
   Python until Rust provider clients or an external media service are selected.
-- `skills`: discovery, frontmatter parsing, install/update/audit, provenance,
-  config prompts, and prompt-cache-aware injection stay in Python.
+- `skills`: `skill_manage`, plugin skills, optional-skill hub operations,
+  provenance, setup prompts, mutation, and prompt-cache-aware slash injection
+  stay in Python.
 - `clarify`: only the UI callbacks stay in the Python CLI/gateway platform
   layer until those runtimes are Rust-owned.
 - `cron/messaging/homeassistant`: scheduler state, gateway delivery, and

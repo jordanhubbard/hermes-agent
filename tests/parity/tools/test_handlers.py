@@ -47,6 +47,7 @@ def _rust_snapshot(root: Path) -> dict[str, Any]:
 
 def _python_snapshot(root: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     _prepare_fixture(root)
+    _prepare_skill_fixture(root)
 
     import tools.file_tools as file_tools
 
@@ -87,10 +88,12 @@ def _python_snapshot(root: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, A
     native["patch_after_content"] = (root / "sample.txt").read_text(encoding="utf-8")
 
     agent_native = _python_agent_handler_snapshot(root, monkeypatch)
+    skill_native = _python_skill_handler_snapshot(root, monkeypatch)
 
     return {
         "native_file_handlers": native,
         "native_agent_handlers": agent_native,
+        "native_skill_handlers": skill_native,
         "python_boundaries": _documented_python_boundaries(),
     }
 
@@ -101,6 +104,38 @@ def _prepare_fixture(root: Path) -> None:
     (root / "notes.md").write_text("# Notes\nalpha note\n", encoding="utf-8")
     (root / "src").mkdir(exist_ok=True)
     (root / "src" / "main.py").write_text("print('alpha')\n", encoding="utf-8")
+
+
+def _prepare_skill_fixture(root: Path) -> None:
+    skill_dir = root / "skills" / "devops" / "my-skill"
+    (skill_dir / "references").mkdir(parents=True, exist_ok=True)
+    (skill_dir / "templates").mkdir(parents=True, exist_ok=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\n"
+        "name: my-skill\n"
+        "description: Test skill description\n"
+        "tags: [alpha, beta]\n"
+        "related_skills: [other-skill]\n"
+        "---\n"
+        "# My Skill\n\n"
+        "Use this skill for parity.\n",
+        encoding="utf-8",
+    )
+    (skill_dir / "references" / "api.md").write_text(
+        "# API\n\nReference content.\n",
+        encoding="utf-8",
+    )
+    (skill_dir / "templates" / "config.yaml").write_text(
+        "name: example\n",
+        encoding="utf-8",
+    )
+
+    fallback_dir = root / "skills" / "fallback-skill"
+    fallback_dir.mkdir(parents=True, exist_ok=True)
+    (fallback_dir / "SKILL.md").write_text(
+        "---\nname: fallback-skill\n---\n# Fallback\n\nFirst body line description.\n",
+        encoding="utf-8",
+    )
 
 
 def _normalize_search_result(result_text: str) -> dict[str, Any]:
@@ -140,6 +175,15 @@ def test_native_agent_handler_snapshot_matches_python(monkeypatch: pytest.Monkey
         python_root,
         monkeypatch,
     )["native_agent_handlers"]
+
+
+def test_native_skill_handler_snapshot_matches_python(monkeypatch: pytest.MonkeyPatch) -> None:
+    root = _clean_root(f"skill-handler-parity-{os.getpid()}")
+
+    assert _rust_snapshot(root)["native_skill_handlers"] == _python_snapshot(
+        root,
+        monkeypatch,
+    )["native_skill_handlers"]
 
 
 def test_process_and_terminal_boundary_contracts() -> None:
@@ -189,7 +233,10 @@ def test_all_core_tools_are_native_or_explicit_boundaries() -> None:
     assert "clarify" in snapshot["native_tools"]
     assert "memory" in snapshot["native_tools"]
     assert "read_file" in snapshot["native_tools"]
+    assert "skills_list" in snapshot["native_tools"]
+    assert "skill_view" in snapshot["native_tools"]
     assert "execute_code" in snapshot["boundary_tools"]
+    assert "skill_manage" in snapshot["boundary_tools"]
     assert "kanban_create" in snapshot["boundary_tools"]
     assert all("deletion_plan" in item for item in snapshot["python_boundaries"])
     assert all(item["deletion_blocker"] is True for item in snapshot["python_boundaries"])
@@ -291,6 +338,49 @@ def _python_agent_handler_snapshot(root: Path, monkeypatch: pytest.MonkeyPatch) 
     return snapshot
 
 
+def _python_skill_handler_snapshot(root: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
+    hermes_home = root / ".hermes"
+    shutil.rmtree(hermes_home, ignore_errors=True)
+    monkeypatch.setenv("HERMES_HOME", str(hermes_home))
+
+    import agent.skill_utils as skill_utils
+    import tools.skills_tool as skills_tool
+
+    skills_dir = root / "skills"
+    monkeypatch.setattr(skills_tool, "SKILLS_DIR", skills_dir)
+    monkeypatch.setattr(skill_utils, "get_external_skills_dirs", lambda: [])
+    monkeypatch.setattr(skills_tool, "_is_skill_disabled", lambda _name, platform=None: False)
+    skills_tool.set_secret_capture_callback(None)
+
+    snapshot = {}
+    snapshot["skills_list"] = json.loads(skills_tool.skills_list())
+    snapshot["skills_list_filtered"] = json.loads(skills_tool.skills_list("devops"))
+    snapshot["skill_view_main"] = json.loads(
+        skills_tool.skill_view("my-skill", preprocess=False)
+    )
+    snapshot["skill_view_linked_file"] = json.loads(
+        skills_tool.skill_view(
+            "my-skill",
+            file_path="references/api.md",
+            preprocess=False,
+        )
+    )
+    snapshot["skill_view_missing_file"] = json.loads(
+        skills_tool.skill_view(
+            "my-skill",
+            file_path="references/missing.md",
+            preprocess=False,
+        )
+    )
+    snapshot["skill_view_traversal"] = json.loads(
+        skills_tool.skill_view("my-skill", file_path="../secret", preprocess=False)
+    )
+    snapshot["skill_view_not_found"] = json.loads(
+        skills_tool.skill_view("missing-skill", preprocess=False)
+    )
+    return snapshot
+
+
 def _documented_python_boundaries() -> list[dict[str, Any]]:
     return [
         {
@@ -365,11 +455,11 @@ def _documented_python_boundaries() -> list[dict[str, Any]]:
         {
             "family": "skills",
             "boundary": "python_runtime_boundary",
-            "tools": ["skills_list", "skill_view", "skill_manage"],
+            "tools": ["skill_manage"],
             "parity_gate": "tests/parity/tools/test_handlers.py::test_all_core_tools_are_native_or_explicit_boundaries",
             "deletion_blocker": True,
-            "deletion_plan": "Port skill discovery, frontmatter parsing, install/update/audit, and prompt-cache-aware slash injection to Rust or a stable external skill service.",
-            "reason": "Skill tools rely on profile-scoped skill storage, provenance, setup prompts, and optional-skill install logic that is still Python-owned.",
+            "deletion_plan": "Port skill creation/update/delete, optional-skill install/update/audit, plugin skills, provenance, setup prompts, and prompt-cache-aware slash injection to Rust or a stable external skill service.",
+            "reason": "Read-only local skill list/view behavior is native Rust; mutation, optional-skill hub operations, plugin skills, provenance, setup prompts, and slash injection remain Python-owned.",
         },
         {
             "family": "clarify",

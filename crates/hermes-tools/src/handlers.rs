@@ -8,12 +8,14 @@ use serde_json::{json, Value};
 
 use crate::clarify::{clarify_response, ClarifyCallback};
 use crate::memory::{memory_response, MemoryStore};
+use crate::skills::{skill_view, skills_list};
 use crate::todo::{todo_response, TodoStore};
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct HandlerParitySnapshot {
     pub native_file_handlers: BTreeMap<String, Value>,
     pub native_agent_handlers: BTreeMap<String, Value>,
+    pub native_skill_handlers: BTreeMap<String, Value>,
     pub python_boundaries: Vec<ToolHandlerBoundary>,
     pub native_tools: Vec<String>,
     pub boundary_tools: Vec<String>,
@@ -33,6 +35,7 @@ pub struct ToolHandlerBoundary {
 
 pub fn handler_parity_snapshot(root: &Path) -> io::Result<HandlerParitySnapshot> {
     prepare_fixture(root)?;
+    prepare_skill_fixture(root)?;
 
     let mut native_file_handlers = BTreeMap::new();
     native_file_handlers.insert(
@@ -65,6 +68,7 @@ pub fn handler_parity_snapshot(root: &Path) -> io::Result<HandlerParitySnapshot>
     );
 
     let native_agent_handlers = native_agent_handler_snapshot();
+    let native_skill_handlers = native_skill_handler_snapshot(root)?;
     let python_boundaries = documented_python_boundaries();
     let native_tools = vec![
         "clarify".to_string(),
@@ -72,6 +76,8 @@ pub fn handler_parity_snapshot(root: &Path) -> io::Result<HandlerParitySnapshot>
         "patch".to_string(),
         "read_file".to_string(),
         "search_files".to_string(),
+        "skill_view".to_string(),
+        "skills_list".to_string(),
         "todo".to_string(),
         "write_file".to_string(),
     ];
@@ -81,6 +87,7 @@ pub fn handler_parity_snapshot(root: &Path) -> io::Result<HandlerParitySnapshot>
     Ok(HandlerParitySnapshot {
         native_file_handlers,
         native_agent_handlers,
+        native_skill_handlers,
         python_boundaries,
         native_tools,
         boundary_tools,
@@ -379,15 +386,11 @@ fn documented_python_boundaries() -> Vec<ToolHandlerBoundary> {
         ToolHandlerBoundary {
             family: "skills".to_string(),
             boundary: "python_runtime_boundary".to_string(),
-            tools: vec![
-                "skills_list".to_string(),
-                "skill_view".to_string(),
-                "skill_manage".to_string(),
-            ],
+            tools: vec!["skill_manage".to_string()],
             parity_gate: "tests/parity/tools/test_handlers.py::test_all_core_tools_are_native_or_explicit_boundaries".to_string(),
             deletion_blocker: true,
-            deletion_plan: "Port skill discovery, frontmatter parsing, install/update/audit, and prompt-cache-aware slash injection to Rust or a stable external skill service.".to_string(),
-            reason: "Skill tools rely on profile-scoped skill storage, provenance, setup prompts, and optional-skill install logic that is still Python-owned.".to_string(),
+            deletion_plan: "Port skill creation/update/delete, optional-skill install/update/audit, plugin skills, provenance, setup prompts, and prompt-cache-aware slash injection to Rust or a stable external skill service.".to_string(),
+            reason: "Read-only local skill list/view behavior is native Rust; mutation, optional-skill hub operations, plugin skills, provenance, setup prompts, and slash injection remain Python-owned.".to_string(),
         },
         ToolHandlerBoundary {
             family: "clarify".to_string(),
@@ -432,6 +435,32 @@ fn documented_python_boundaries() -> Vec<ToolHandlerBoundary> {
             reason: "Kanban tools mutate dispatcher task state and enforce worker ownership through Python kanban_db and profile config.".to_string(),
         },
     ]
+}
+
+fn prepare_skill_fixture(root: &Path) -> io::Result<()> {
+    let skill_dir = root.join("skills").join("devops").join("my-skill");
+    fs::create_dir_all(skill_dir.join("references"))?;
+    fs::create_dir_all(skill_dir.join("templates"))?;
+    fs::write(
+        skill_dir.join("SKILL.md"),
+        "---\nname: my-skill\ndescription: Test skill description\ntags: [alpha, beta]\nrelated_skills: [other-skill]\n---\n# My Skill\n\nUse this skill for parity.\n",
+    )?;
+    fs::write(
+        skill_dir.join("references").join("api.md"),
+        "# API\n\nReference content.\n",
+    )?;
+    fs::write(
+        skill_dir.join("templates").join("config.yaml"),
+        "name: example\n",
+    )?;
+
+    let fallback_dir = root.join("skills").join("fallback-skill");
+    fs::create_dir_all(&fallback_dir)?;
+    fs::write(
+        fallback_dir.join("SKILL.md"),
+        "---\nname: fallback-skill\n---\n# Fallback\n\nFirst body line description.\n",
+    )?;
+    Ok(())
 }
 
 fn native_agent_handler_snapshot() -> BTreeMap<String, Value> {
@@ -564,6 +593,37 @@ fn native_agent_handler_snapshot() -> BTreeMap<String, Value> {
         json!(memory_store.format_for_system_prompt("memory")),
     );
     snapshot
+}
+
+fn native_skill_handler_snapshot(root: &Path) -> io::Result<BTreeMap<String, Value>> {
+    let skills_dir = root.join("skills");
+    let mut snapshot = BTreeMap::new();
+    snapshot.insert("skills_list".to_string(), skills_list(&skills_dir, None)?);
+    snapshot.insert(
+        "skills_list_filtered".to_string(),
+        skills_list(&skills_dir, Some("devops"))?,
+    );
+    snapshot.insert(
+        "skill_view_main".to_string(),
+        skill_view(&skills_dir, "my-skill", None)?,
+    );
+    snapshot.insert(
+        "skill_view_linked_file".to_string(),
+        skill_view(&skills_dir, "my-skill", Some("references/api.md"))?,
+    );
+    snapshot.insert(
+        "skill_view_missing_file".to_string(),
+        skill_view(&skills_dir, "my-skill", Some("references/missing.md"))?,
+    );
+    snapshot.insert(
+        "skill_view_traversal".to_string(),
+        skill_view(&skills_dir, "my-skill", Some("../secret"))?,
+    );
+    snapshot.insert(
+        "skill_view_not_found".to_string(),
+        skill_view(&skills_dir, "missing-skill", None)?,
+    );
+    Ok(snapshot)
 }
 
 fn documented_boundary_tools(boundaries: &[ToolHandlerBoundary]) -> Vec<String> {

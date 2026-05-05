@@ -7,6 +7,7 @@ pub mod clarify;
 pub mod handlers;
 pub mod memory;
 pub mod safety;
+pub mod skills;
 pub mod todo;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
