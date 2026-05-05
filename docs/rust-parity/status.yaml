@@ -457,7 +457,7 @@ epics:
         rust_target: crates/hermes-cli + crates/hermes-config
         status: in_progress
         ci_gate: CLI smoke suite from clean temp HOME and migrated profile fixtures
-        notes: Started the production CLI cutover with Rust launcher-side -p/--profile resolution for Rust-owned commands and a native bare `hermes profile` status command that matches Python for clean default and named profile homes, display paths, config model/provider rendering, and skill counts when no gateway is running. Remaining setup wizard, auth, provider/model selection, config migration commands, profile list/create/delete/show/alias/rename/export/import, live gateway-running detection in profile output, logs, update flow, skins/display mutation, skills commands, and interactive/TUI behavior remain Python-owned.
+        notes: Started the production CLI cutover with Rust launcher-side -p/--profile resolution for Rust-owned commands plus native `hermes profile`, `hermes profile list`, `hermes profile show`, and `hermes profile use` behavior matching Python for clean default/named profile homes, display paths, config model/provider rendering, skill counts, .env/SOUL status, table rendering, and sticky active-profile writes when no gateway is running. Remaining setup wizard, auth, provider/model selection, config migration commands, profile create/delete/alias/rename/export/import, live gateway-running detection in profile output, logs, update flow, skins/display mutation, skills commands, and interactive/TUI behavior remain Python-owned.
       - bead: hermes-fpr.7
         story: Port integration runtimes around the primary agent
         python_paths:

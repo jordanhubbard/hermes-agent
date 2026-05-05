@@ -26,6 +26,19 @@ pub struct ProfileStatus {
     pub alias_path: Option<String>,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct ProfileInfo {
+    pub name: String,
+    pub path: String,
+    pub is_default: bool,
+    pub gateway_running: bool,
+    pub model: Option<String>,
+    pub provider: Option<String>,
+    pub has_env: bool,
+    pub skill_count: usize,
+    pub alias_path: Option<String>,
+}
+
 pub fn resolve_rust_profile_context(args: &[OsString]) -> Result<RustProfileContext, String> {
     let home = home_dir();
     let env_home = env::var_os("HERMES_HOME")
@@ -127,6 +140,197 @@ pub fn render_profile_status(status: &ProfileStatus) -> String {
     }
     output.push('\n');
     output
+}
+
+pub fn list_profiles(context: &RustProfileContext) -> Vec<ProfileInfo> {
+    let default_root = PathBuf::from(&context.paths.default_hermes_root);
+    let profiles_root = PathBuf::from(&context.paths.profiles_root);
+    let mut profiles = Vec::new();
+
+    if default_root.is_dir() {
+        profiles.push(profile_info("default", &default_root, true));
+    }
+
+    let Ok(entries) = fs::read_dir(profiles_root) else {
+        return profiles;
+    };
+    let mut entries: Vec<_> = entries.filter_map(Result::ok).collect();
+    entries.sort_by_key(|entry| entry.file_name());
+    for entry in entries {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if name == "default" || validate_profile_name(&name).is_err() {
+            continue;
+        }
+        profiles.push(profile_info(&name, &path, false));
+    }
+
+    profiles
+}
+
+pub fn render_profile_list(profiles: &[ProfileInfo], active_profile: &str) -> String {
+    if profiles.is_empty() {
+        return "No profiles found.\n".to_string();
+    }
+
+    let mut output = String::new();
+    output.push_str(&format!(
+        "\n {:<16} {:<28} {:<12} {}\n",
+        "Profile", "Model", "Gateway", "Alias"
+    ));
+    output.push_str(&format!(
+        " {}    {}    {}    {}\n",
+        "─".repeat(15),
+        "─".repeat(27),
+        "─".repeat(11),
+        "─".repeat(12)
+    ));
+
+    for profile in profiles {
+        let marker = if profile.name == active_profile
+            || (active_profile == "default" && profile.is_default)
+        {
+            " ◆"
+        } else {
+            "  "
+        };
+        let model = truncate_chars(profile.model.as_deref().unwrap_or("—"), 26);
+        let gateway = if profile.gateway_running {
+            "running"
+        } else {
+            "stopped"
+        };
+        let alias = if profile.is_default {
+            "—".to_string()
+        } else {
+            profile
+                .alias_path
+                .as_ref()
+                .map(|_| profile.name.clone())
+                .unwrap_or_else(|| "—".to_string())
+        };
+        output.push_str(&format!(
+            "{marker}{:<15} {:<28} {:<12} {alias}\n",
+            profile.name, model, gateway
+        ));
+    }
+    output.push('\n');
+    output
+}
+
+pub fn show_profile(context: &RustProfileContext, name: &str) -> Result<ProfileInfo, String> {
+    let canon = normalize_profile_name(name)?;
+    let default_root = PathBuf::from(&context.paths.default_hermes_root);
+    let profiles_root = PathBuf::from(&context.paths.profiles_root);
+    let path = profile_dir(&default_root, &profiles_root, &canon);
+    if canon != "default" && !path.is_dir() {
+        return Err(format!("Profile '{name}' does not exist."));
+    }
+    Ok(profile_info(&canon, &path, canon == "default"))
+}
+
+pub fn render_profile_show(profile: &ProfileInfo) -> String {
+    let mut output = String::new();
+    output.push_str(&format!("\nProfile: {}\n", profile.name));
+    output.push_str(&format!("Path:    {}\n", profile.path));
+    if let Some(model) = &profile.model {
+        output.push_str("Model:   ");
+        output.push_str(model);
+        if let Some(provider) = &profile.provider {
+            output.push_str(" (");
+            output.push_str(provider);
+            output.push(')');
+        }
+        output.push('\n');
+    }
+    output.push_str(&format!(
+        "Gateway: {}\n",
+        if profile.gateway_running {
+            "running"
+        } else {
+            "stopped"
+        }
+    ));
+    output.push_str(&format!("Skills:  {}\n", profile.skill_count));
+    output.push_str(&format!(
+        ".env:    {}\n",
+        if profile.has_env {
+            "exists"
+        } else {
+            "not configured"
+        }
+    ));
+    output.push_str(&format!(
+        "SOUL.md: {}\n",
+        if Path::new(&profile.path).join("SOUL.md").exists() {
+            "exists"
+        } else {
+            "not configured"
+        }
+    ));
+    if let Some(alias_path) = &profile.alias_path {
+        output.push_str(&format!("Alias:   {alias_path}\n"));
+    }
+    output.push('\n');
+    output
+}
+
+pub fn set_active_profile(context: &RustProfileContext, name: &str) -> Result<String, String> {
+    let canon = normalize_profile_name(name)?;
+    let default_root = PathBuf::from(&context.paths.default_hermes_root);
+    let profiles_root = PathBuf::from(&context.paths.profiles_root);
+    let path = profile_dir(&default_root, &profiles_root, &canon);
+    if canon != "default" && !path.is_dir() {
+        return Err(format!(
+            "Profile '{canon}' does not exist. Create it with: hermes profile create {canon}"
+        ));
+    }
+
+    let active_profile_path = PathBuf::from(&context.paths.active_profile_path);
+    fs::create_dir_all(active_profile_path.parent().unwrap_or(Path::new(".")))
+        .map_err(|err| format!("could not create profile root: {err}"))?;
+    if canon == "default" {
+        if let Err(err) = fs::remove_file(&active_profile_path) {
+            if err.kind() != std::io::ErrorKind::NotFound {
+                return Err(format!("could not clear active profile: {err}"));
+            }
+        }
+        Ok("Switched to: default (~/.hermes)\n".to_string())
+    } else {
+        let tmp = active_profile_path.with_extension("tmp");
+        fs::write(&tmp, format!("{canon}\n"))
+            .map_err(|err| format!("could not write active profile: {err}"))?;
+        fs::rename(&tmp, &active_profile_path)
+            .map_err(|err| format!("could not replace active profile: {err}"))?;
+        Ok(format!("Switched to: {canon}\n"))
+    }
+}
+
+fn profile_info(name: &str, path: &Path, is_default: bool) -> ProfileInfo {
+    let (model, provider) = read_config_model(path);
+    let alias_path = if is_default {
+        None
+    } else {
+        alias_path_for(name)
+    };
+    ProfileInfo {
+        name: name.to_string(),
+        path: path.to_string_lossy().to_string(),
+        is_default,
+        gateway_running: false,
+        model,
+        provider,
+        has_env: path.join(".env").exists(),
+        skill_count: count_skills(path),
+        alias_path,
+    }
+}
+
+fn truncate_chars(value: &str, max_chars: usize) -> String {
+    value.chars().take(max_chars).collect()
 }
 
 fn strip_profile_args(args: &[OsString]) -> Result<(Vec<OsString>, Option<String>), String> {

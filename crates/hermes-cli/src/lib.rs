@@ -11,7 +11,8 @@ pub use display::{
     builtin_skin_surfaces, logging_plan, render_status, CliStatusInput, LoggingPlan, SkinSurface,
 };
 pub use profile::{
-    profile_status, render_profile_status, resolve_rust_profile_context, ProfileStatus,
+    list_profiles, profile_status, render_profile_list, render_profile_show, render_profile_status,
+    resolve_rust_profile_context, set_active_profile, show_profile, ProfileInfo, ProfileStatus,
     RustProfileContext,
 };
 pub use setup::{

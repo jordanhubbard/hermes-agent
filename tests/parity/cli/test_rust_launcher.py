@@ -59,6 +59,12 @@ def _run_python_cli(*args: str, env: dict[str, str] | None = None) -> subprocess
     )
 
 
+def _write_skill(profile_home: Path, name: str) -> None:
+    skill_dir = profile_home / "skills" / "custom" / name
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(f"---\nname: {name}\n---\n")
+
+
 def test_runtime_info_reports_default_python_rollout_path() -> None:
     result = _run_launcher("--runtime-info")
 
@@ -133,6 +139,59 @@ def test_rust_runtime_profile_flag_matches_python_named_profile(tmp_path: Path) 
     assert rust.returncode == 0, rust.stderr
     assert python.returncode == 0, python.stderr
     assert rust.stdout == python.stdout
+
+
+def test_rust_runtime_profile_list_matches_python(tmp_path: Path) -> None:
+    hermes_root = tmp_path / "hermes-root"
+    coder_home = hermes_root / "profiles" / "coder"
+    _write_skill(hermes_root, "default-skill")
+    _write_skill(coder_home, "coder-skill")
+    (coder_home / "config.yaml").write_text("model: claude-test\n")
+
+    env = {"HERMES_HOME": str(hermes_root)}
+    rust = _run_launcher("profile", "list", env={**env, "HERMES_RUNTIME": "rust"})
+    python = _run_python_cli("profile", "list", env=env)
+
+    assert rust.returncode == 0, rust.stderr
+    assert python.returncode == 0, python.stderr
+    assert rust.stdout == python.stdout
+
+
+def test_rust_runtime_profile_show_matches_python(tmp_path: Path) -> None:
+    hermes_root = tmp_path / "hermes-root"
+    coder_home = hermes_root / "profiles" / "coder"
+    _write_skill(coder_home, "coder-skill")
+    (coder_home / ".env").write_text("OPENAI_API_KEY=secret\n")
+    (coder_home / "SOUL.md").write_text("profile soul\n")
+    (coder_home / "config.yaml").write_text(
+        "model:\n  default: gpt-show\n  provider: openai\n"
+    )
+
+    env = {"HERMES_HOME": str(hermes_root)}
+    rust = _run_launcher("profile", "show", "coder", env={**env, "HERMES_RUNTIME": "rust"})
+    python = _run_python_cli("profile", "show", "coder", env=env)
+
+    assert rust.returncode == 0, rust.stderr
+    assert python.returncode == 0, python.stderr
+    assert rust.stdout == python.stdout
+
+
+def test_rust_runtime_profile_use_matches_python(tmp_path: Path) -> None:
+    rust_root = tmp_path / "rust-root"
+    python_root = tmp_path / "python-root"
+    (rust_root / "profiles" / "coder").mkdir(parents=True)
+    (python_root / "profiles" / "coder").mkdir(parents=True)
+
+    rust_env = {"HERMES_HOME": str(rust_root), "HERMES_RUNTIME": "rust"}
+    python_env = {"HERMES_HOME": str(python_root)}
+    rust = _run_launcher("profile", "use", "coder", env=rust_env)
+    python = _run_python_cli("profile", "use", "coder", env=python_env)
+
+    assert rust.returncode == 0, rust.stderr
+    assert python.returncode == 0, python.stderr
+    assert rust.stdout == python.stdout
+    assert (rust_root / "active_profile").read_text() == "coder\n"
+    assert (python_root / "active_profile").read_text() == "coder\n"
 
 
 def test_rust_runtime_rejects_unported_commands_without_python_import() -> None:

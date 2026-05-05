@@ -10,10 +10,13 @@ use hermes_agent_core::{
 };
 use hermes_cli::launcher::{
     is_runtime_info_request, is_rust_agent_runtime_smoke_request, is_rust_help_request,
-    is_rust_profile_status_request, is_rust_version_request, python_command, render_rust_help,
+    is_rust_profile_request, is_rust_version_request, python_command, render_rust_help,
     render_rust_version, runtime_info, select_runtime, RuntimeSelection,
 };
-use hermes_cli::{profile_status, render_profile_status, resolve_rust_profile_context};
+use hermes_cli::{
+    list_profiles, profile_status, render_profile_list, render_profile_show, render_profile_status,
+    resolve_rust_profile_context, set_active_profile, show_profile, RustProfileContext,
+};
 use serde_json::json;
 use std::collections::VecDeque;
 
@@ -86,10 +89,8 @@ fn run_rust(args: &[OsString]) -> i32 {
         return run_agent_runtime_smoke();
     }
 
-    if is_rust_profile_status_request(args) {
-        let status = profile_status(&profile_context);
-        print!("{}", render_profile_status(&status));
-        return 0;
+    if is_rust_profile_request(args) {
+        return run_profile_command(&profile_context, args);
     }
 
     let command = args
@@ -101,6 +102,69 @@ fn run_rust(args: &[OsString]) -> i32 {
 Use HERMES_RUNTIME=python for the rollout fallback. Full parity remains tracked by the hermes-fpr beads."
     );
     78
+}
+
+fn run_profile_command(context: &RustProfileContext, args: &[OsString]) -> i32 {
+    let subcommand = args.get(1).map(|arg| arg.to_string_lossy().into_owned());
+    match subcommand.as_deref() {
+        None => {
+            let status = profile_status(context);
+            print!("{}", render_profile_status(&status));
+            0
+        }
+        Some("list") => {
+            let profiles = list_profiles(context);
+            print!(
+                "{}",
+                render_profile_list(&profiles, &context.active_profile)
+            );
+            0
+        }
+        Some("show") => {
+            let Some(name) = args.get(2).map(|arg| arg.to_string_lossy().into_owned()) else {
+                eprintln!("usage: hermes profile show <profile_name>");
+                return 2;
+            };
+            match show_profile(context, &name) {
+                Ok(profile) => {
+                    print!("{}", render_profile_show(&profile));
+                    0
+                }
+                Err(message) => {
+                    println!("Error: {message}");
+                    1
+                }
+            }
+        }
+        Some("use") => {
+            let Some(name) = args.get(2).map(|arg| arg.to_string_lossy().into_owned()) else {
+                eprintln!("usage: hermes profile use <profile_name>");
+                return 2;
+            };
+            match set_active_profile(context, &name) {
+                Ok(message) => {
+                    print!("{message}");
+                    0
+                }
+                Err(message) => {
+                    println!("Error: {message}");
+                    1
+                }
+            }
+        }
+        Some(_) => {
+            let command = args
+                .iter()
+                .map(|arg| arg.to_string_lossy())
+                .collect::<Vec<_>>()
+                .join(" ");
+            eprintln!(
+                "HERMES_RUNTIME=rust selected, but command {command:?} is not Rust-owned yet. \
+Use HERMES_RUNTIME=python for the rollout fallback. Full parity remains tracked by the hermes-fpr beads."
+            );
+            78
+        }
+    }
 }
 
 struct SmokeModel {

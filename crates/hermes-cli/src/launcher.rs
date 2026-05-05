@@ -85,6 +85,10 @@ pub fn is_rust_profile_status_request(args: &[OsString]) -> bool {
     args.len() == 1 && args.first().is_some_and(|arg| arg == OsStr::new("profile"))
 }
 
+pub fn is_rust_profile_request(args: &[OsString]) -> bool {
+    args.first().is_some_and(|arg| arg == OsStr::new("profile"))
+}
+
 pub fn render_rust_help() -> &'static str {
     "Hermes Agent Rust launcher\n\n\
 Usage:\n  hermes [--runtime-info]\n  HERMES_RUNTIME=python hermes [args...]\n  HERMES_RUNTIME=rust hermes version\n  HERMES_RUNTIME=rust hermes agent-runtime-smoke\n\
@@ -185,6 +189,10 @@ mod tests {
             "agent-runtime-smoke"
         )]));
         assert!(is_rust_profile_status_request(&[OsString::from("profile")]));
+        assert!(is_rust_profile_request(&[
+            OsString::from("profile"),
+            OsString::from("list")
+        ]));
         assert!(!is_rust_profile_status_request(&[
             OsString::from("profile"),
             OsString::from("list")
