@@ -233,6 +233,7 @@ def test_all_core_tools_are_native_or_explicit_boundaries() -> None:
     assert "clarify" in snapshot["native_tools"]
     assert "memory" in snapshot["native_tools"]
     assert "read_file" in snapshot["native_tools"]
+    assert "session_search" in snapshot["native_tools"]
     assert "skills_list" in snapshot["native_tools"]
     assert "skill_view" in snapshot["native_tools"]
     assert "execute_code" in snapshot["boundary_tools"]
@@ -335,7 +336,136 @@ def _python_agent_handler_snapshot(root: Path, monkeypatch: pytest.MonkeyPatch) 
     snapshot["memory_snapshot_after_write"] = memory_store.format_for_system_prompt(
         "memory"
     )
+    snapshot.update(_python_session_search_handler_snapshot())
     return snapshot
+
+
+def _python_session_search_handler_snapshot() -> dict[str, Any]:
+    from unittest.mock import AsyncMock, patch as _patch
+
+    from tools.session_search_tool import session_search
+
+    session_store = _python_session_search_fixture()
+    snapshot = {}
+    snapshot["session_search_no_db"] = json.loads(session_search(query="test", db=None))
+    snapshot["session_search_recent"] = json.loads(
+        session_search(
+            query="",
+            db=session_store,
+            limit=3,
+            current_session_id="current_child",
+        )
+    )
+
+    empty_search_store = _python_session_search_fixture()
+    empty_search_store.search_messages.return_value = []
+    snapshot["session_search_no_results"] = json.loads(
+        session_search(query="missing", db=empty_search_store, limit="2")
+    )
+
+    with _patch(
+        "tools.session_search_tool.async_call_llm",
+        new_callable=AsyncMock,
+        side_effect=RuntimeError("no provider"),
+    ):
+        snapshot["session_search_current_lineage_excluded"] = json.loads(
+            session_search(
+                query="lineage",
+                db=session_store,
+                limit=5,
+                current_session_id="current_child",
+            )
+        )
+        snapshot["session_search_parent_source_preview"] = json.loads(
+            session_search(query="hello world", db=session_store, limit=3)
+        )
+    return snapshot
+
+
+def _python_session_search_fixture() -> Any:
+    from unittest.mock import MagicMock
+
+    db = MagicMock()
+    sessions = {
+        "current_child": {
+            "id": "current_child",
+            "parent_session_id": "current_root",
+            "source": "cli",
+        },
+        "current_root": {
+            "id": "current_root",
+            "title": "Current",
+            "source": "cli",
+            "started_at": "2026-05-03T00:00:00",
+            "last_active": "2026-05-03T00:10:00",
+            "message_count": 2,
+            "preview": "current preview",
+            "parent_session_id": None,
+        },
+        "parent_sid": {
+            "id": "parent_sid",
+            "parent_session_id": None,
+            "source": "api_server",
+            "started_at": "2026-05-01T00:00:00",
+            "model": "gpt-parent",
+        },
+        "child_sid": {
+            "id": "child_sid",
+            "parent_session_id": "parent_sid",
+            "source": "telegram",
+            "started_at": "2026-05-02T00:00:00",
+            "model": "gpt-child",
+        },
+        "recent_other": {
+            "id": "recent_other",
+            "title": None,
+            "source": "telegram",
+            "started_at": "2026-05-02T00:00:00",
+            "last_active": "2026-05-02T00:30:00",
+            "message_count": 4,
+            "preview": "other preview",
+            "parent_session_id": None,
+        },
+    }
+    db.get_session.side_effect = lambda session_id: sessions.get(session_id)
+    db.list_sessions_rich.return_value = [
+        sessions["current_root"],
+        {
+            "id": "child_recent",
+            "source": "cli",
+            "parent_session_id": "current_root",
+            "started_at": "2026-05-02T12:00:00",
+            "last_active": "2026-05-02T12:05:00",
+            "message_count": 1,
+            "preview": "child preview",
+        },
+        sessions["recent_other"],
+    ]
+    db.search_messages.return_value = [
+        {
+            "session_id": "current_root",
+            "role": "user",
+            "content": "lineage match",
+            "source": "cli",
+            "session_started": "2026-05-03T00:00:00",
+            "model": "gpt-current",
+        },
+        {
+            "session_id": "child_sid",
+            "role": "user",
+            "content": "hello world",
+            "source": "telegram",
+            "session_started": "2026-05-02T00:00:00",
+            "model": "gpt-child",
+        },
+    ]
+    db.get_messages_as_conversation.side_effect = lambda session_id: {
+        "parent_sid": [
+            {"role": "user", "content": "hello world"},
+            {"role": "assistant", "content": "hi there"},
+        ],
+    }.get(session_id, [])
+    return db
 
 
 def _python_skill_handler_snapshot(root: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
@@ -437,11 +567,11 @@ def _documented_python_boundaries() -> list[dict[str, Any]]:
         {
             "family": "memory/session",
             "boundary": "agent_loop_boundary",
-            "tools": ["session_search"],
+            "tools": [],
             "parity_gate": "tests/parity/tools/test_handlers.py::test_non_file_tool_families_have_documented_boundaries",
             "deletion_blocker": True,
-            "deletion_plan": "Wire session search through hermes-state plus auxiliary summarization before deleting Python agent-loop interceptors.",
-            "reason": "The memory handler semantics are native Rust; session_search remains intercepted by the agent loop and auxiliary summarization subsystems rather than registry-dispatched as an ordinary tool.",
+            "deletion_plan": "Wire native session_search to the production Rust agent loop with hermes-state and provider-backed auxiliary summarization before deleting Python agent-loop interceptors.",
+            "reason": "Memory and session_search dispatcher semantics are native Rust; production wiring to hermes-state plus auxiliary model execution remains tracked outside this handler contract.",
         },
         {
             "family": "media",

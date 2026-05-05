@@ -7,6 +7,7 @@ pub mod clarify;
 pub mod handlers;
 pub mod memory;
 pub mod safety;
+pub mod session_search;
 pub mod skills;
 pub mod todo;
 

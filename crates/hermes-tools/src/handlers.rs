@@ -8,6 +8,9 @@ use serde_json::{json, Value};
 
 use crate::clarify::{clarify_response, ClarifyCallback};
 use crate::memory::{memory_response, MemoryStore};
+use crate::session_search::{
+    session_search_response, ConversationMessage, SearchMatch, SessionRecord, SessionSearchStore,
+};
 use crate::skills::{skill_view, skills_list};
 use crate::todo::{todo_response, TodoStore};
 
@@ -76,6 +79,7 @@ pub fn handler_parity_snapshot(root: &Path) -> io::Result<HandlerParitySnapshot>
         "patch".to_string(),
         "read_file".to_string(),
         "search_files".to_string(),
+        "session_search".to_string(),
         "skill_view".to_string(),
         "skills_list".to_string(),
         "todo".to_string(),
@@ -364,11 +368,11 @@ fn documented_python_boundaries() -> Vec<ToolHandlerBoundary> {
         ToolHandlerBoundary {
             family: "memory/session".to_string(),
             boundary: "agent_loop_boundary".to_string(),
-            tools: vec!["session_search".to_string()],
+            tools: Vec::new(),
             parity_gate: "tests/parity/tools/test_handlers.py::test_non_file_tool_families_have_documented_boundaries".to_string(),
             deletion_blocker: true,
-            deletion_plan: "Wire session search through hermes-state plus auxiliary summarization before deleting Python agent-loop interceptors.".to_string(),
-            reason: "The memory handler semantics are native Rust; session_search remains intercepted by the agent loop and auxiliary summarization subsystems rather than registry-dispatched as an ordinary tool.".to_string(),
+            deletion_plan: "Wire native session_search to the production Rust agent loop with hermes-state and provider-backed auxiliary summarization before deleting Python agent-loop interceptors.".to_string(),
+            reason: "Memory and session_search dispatcher semantics are native Rust; production wiring to hermes-state plus auxiliary model execution remains tracked outside this handler contract.".to_string(),
         },
         ToolHandlerBoundary {
             family: "media".to_string(),
@@ -592,7 +596,166 @@ fn native_agent_handler_snapshot() -> BTreeMap<String, Value> {
         "memory_snapshot_after_write".to_string(),
         json!(memory_store.format_for_system_prompt("memory")),
     );
+    let session_store = session_search_fixture();
+    snapshot.insert(
+        "session_search_no_db".to_string(),
+        session_search_response(None, "test", None, &json!(3), None, None),
+    );
+    snapshot.insert(
+        "session_search_recent".to_string(),
+        session_search_response(
+            Some(&session_store),
+            "",
+            None,
+            &json!(3),
+            Some("current_child"),
+            None,
+        ),
+    );
+    let mut empty_search_store = session_search_fixture();
+    empty_search_store.search_results.clear();
+    snapshot.insert(
+        "session_search_no_results".to_string(),
+        session_search_response(
+            Some(&empty_search_store),
+            "missing",
+            None,
+            &json!("2"),
+            None,
+            None,
+        ),
+    );
+    snapshot.insert(
+        "session_search_current_lineage_excluded".to_string(),
+        session_search_response(
+            Some(&session_store),
+            "lineage",
+            None,
+            &json!(5),
+            Some("current_child"),
+            None,
+        ),
+    );
+    snapshot.insert(
+        "session_search_parent_source_preview".to_string(),
+        session_search_response(
+            Some(&session_store),
+            "hello world",
+            None,
+            &json!(3),
+            None,
+            None,
+        ),
+    );
     snapshot
+}
+
+fn session_search_fixture() -> SessionSearchStore {
+    let mut store = SessionSearchStore::default();
+    store.sessions.insert(
+        "current_child".to_string(),
+        SessionRecord {
+            id: "current_child".to_string(),
+            parent_session_id: Some("current_root".to_string()),
+            source: "cli".to_string(),
+            ..SessionRecord::default()
+        },
+    );
+    store.sessions.insert(
+        "current_root".to_string(),
+        SessionRecord {
+            id: "current_root".to_string(),
+            title: Some("Current".to_string()),
+            source: "cli".to_string(),
+            started_at: Some(json!("2026-05-03T00:00:00")),
+            last_active: Some(json!("2026-05-03T00:10:00")),
+            message_count: 2,
+            preview: "current preview".to_string(),
+            ..SessionRecord::default()
+        },
+    );
+    store.sessions.insert(
+        "parent_sid".to_string(),
+        SessionRecord {
+            id: "parent_sid".to_string(),
+            source: "api_server".to_string(),
+            started_at: Some(json!("2026-05-01T00:00:00")),
+            model: Some("gpt-parent".to_string()),
+            ..SessionRecord::default()
+        },
+    );
+    store.sessions.insert(
+        "child_sid".to_string(),
+        SessionRecord {
+            id: "child_sid".to_string(),
+            source: "telegram".to_string(),
+            started_at: Some(json!("2026-05-02T00:00:00")),
+            parent_session_id: Some("parent_sid".to_string()),
+            model: Some("gpt-child".to_string()),
+            ..SessionRecord::default()
+        },
+    );
+    store.sessions.insert(
+        "recent_other".to_string(),
+        SessionRecord {
+            id: "recent_other".to_string(),
+            title: None,
+            source: "telegram".to_string(),
+            started_at: Some(json!("2026-05-02T00:00:00")),
+            last_active: Some(json!("2026-05-02T00:30:00")),
+            message_count: 4,
+            preview: "other preview".to_string(),
+            ..SessionRecord::default()
+        },
+    );
+    store.recent_sessions = vec![
+        store.sessions["current_root"].clone(),
+        SessionRecord {
+            id: "child_recent".to_string(),
+            source: "cli".to_string(),
+            parent_session_id: Some("current_root".to_string()),
+            started_at: Some(json!("2026-05-02T12:00:00")),
+            last_active: Some(json!("2026-05-02T12:05:00")),
+            message_count: 1,
+            preview: "child preview".to_string(),
+            ..SessionRecord::default()
+        },
+        store.sessions["recent_other"].clone(),
+    ];
+    store.search_results = vec![
+        SearchMatch {
+            session_id: "current_root".to_string(),
+            role: "user".to_string(),
+            content: "lineage match".to_string(),
+            source: "cli".to_string(),
+            session_started: Some(json!("2026-05-03T00:00:00")),
+            model: Some("gpt-current".to_string()),
+        },
+        SearchMatch {
+            session_id: "child_sid".to_string(),
+            role: "user".to_string(),
+            content: "hello world".to_string(),
+            source: "telegram".to_string(),
+            session_started: Some(json!("2026-05-02T00:00:00")),
+            model: Some("gpt-child".to_string()),
+        },
+    ];
+    store.messages.insert(
+        "parent_sid".to_string(),
+        vec![
+            ConversationMessage {
+                role: "user".to_string(),
+                content: Some("hello world".to_string()),
+                ..ConversationMessage::default()
+            },
+            ConversationMessage {
+                role: "assistant".to_string(),
+                content: Some("hi there".to_string()),
+                ..ConversationMessage::default()
+            },
+        ],
+    );
+    store
 }
 
 fn native_skill_handler_snapshot(root: &Path) -> io::Result<BTreeMap<String, Value>> {
