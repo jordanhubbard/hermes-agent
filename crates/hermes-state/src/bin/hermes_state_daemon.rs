@@ -30,6 +30,8 @@ use std::io::{self, ErrorKind, Read, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::process;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 const DEFAULT_IDLE_TIMEOUT_SECS: u64 = 300;
@@ -81,11 +83,15 @@ fn run() -> Result<(), String> {
         .map_err(|err| err.to_string())?;
 
     // The daemon owns one SessionStore (one SQLite connection). Multiple
-    // Python clients share it; this is a feature — it serializes writers
-    // through one process and resolves the multi-process WAL contention
-    // story that motivated hermes-izz.2.
-    let mut store = SessionStore::open(db_path.clone())
-        .map_err(|err| format!("open {}: {err}", db_path.display()))?;
+    // Python clients share it through this mutex. SQLite is single-
+    // writer anyway, so a mutex on the store is the right serialization
+    // point — concurrent reads and writes from many client threads are
+    // safe and correct, and the mutex resolves the multi-process WAL
+    // contention story that motivated hermes-izz.2.
+    let store = Arc::new(Mutex::new(
+        SessionStore::open(db_path.clone())
+            .map_err(|err| format!("open {}: {err}", db_path.display()))?,
+    ));
 
     let idle_timeout = Duration::from_secs(idle_timeout_secs);
     eprintln!(
@@ -101,6 +107,7 @@ fn run() -> Result<(), String> {
         .map_err(|err| err.to_string())?;
     let poll_interval = Duration::from_millis(100);
     let mut idle_elapsed = Duration::ZERO;
+    let active_clients = Arc::new(AtomicUsize::new(0));
 
     loop {
         match listener.accept() {
@@ -117,12 +124,25 @@ fn run() -> Result<(), String> {
                     );
                     continue;
                 }
-                if let Err(err) = handle_connection(&mut store, stream) {
-                    eprintln!("hermes_state_daemon: connection error: {err}");
-                }
+                let store_handle = Arc::clone(&store);
+                let active_handle = Arc::clone(&active_clients);
+                active_handle.fetch_add(1, Ordering::SeqCst);
+                std::thread::spawn(move || {
+                    if let Err(err) = handle_connection(&store_handle, stream) {
+                        eprintln!("hermes_state_daemon: connection error: {err}");
+                    }
+                    active_handle.fetch_sub(1, Ordering::SeqCst);
+                });
             }
             Err(err) if err.kind() == ErrorKind::WouldBlock => {
                 std::thread::sleep(poll_interval);
+                // Idle timeout only fires when no clients are actively
+                // connected — otherwise a long-lived client like the
+                // gateway would never let us shut down.
+                if active_clients.load(Ordering::SeqCst) > 0 {
+                    idle_elapsed = Duration::ZERO;
+                    continue;
+                }
                 idle_elapsed += poll_interval;
                 if idle_elapsed >= idle_timeout {
                     eprintln!(
@@ -141,14 +161,17 @@ fn run() -> Result<(), String> {
     }
 }
 
-fn handle_connection(store: &mut SessionStore, mut stream: UnixStream) -> io::Result<()> {
+fn handle_connection(store: &Mutex<SessionStore>, mut stream: UnixStream) -> io::Result<()> {
     stream.set_read_timeout(Some(READ_TIMEOUT))?;
     stream.set_write_timeout(Some(WRITE_TIMEOUT))?;
     loop {
         match read_frame(&mut stream)? {
             None => return Ok(()), // peer closed cleanly
             Some(body) => {
-                let response = process_request(store, &body);
+                let response = {
+                    let mut guard = store.lock().unwrap_or_else(|e| e.into_inner());
+                    process_request(&mut guard, &body)
+                };
                 write_frame(&mut stream, &response)?;
             }
         }

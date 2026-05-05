@@ -22,10 +22,10 @@ Tracks the migration of Hermes subsystems from Python to Rust. Source of truth: 
 
 | Status | Count | Share |
 | --- | ---: | ---: |
-| `planned` | 22 | 69% |
+| `planned` | 21 | 66% |
 | `in_progress` | 3 | 9% |
 | `ported` | 0 | 0% |
-| `tested` | 7 | 22% |
+| `tested` | 8 | 25% |
 | `production_wired` | 0 | 0% |
 | `default` | 0 | 0% |
 | `deferred` | 0 | 0% |
@@ -129,8 +129,8 @@ Replace the cargo-subprocess probe with a real production boundary.
 | --- | --- | --- | --- | --- | --- |
 | `hermes-izz.1` | Replace subprocess probe with a production Rust boundary | `tested` | `hermes_state_rust.py` | `crates/hermes-state/src/bin/hermes_state_daemon.rs` | `cargo test -p hermes-state --test daemon + tests/parity/state/test_daemon_mode.py` |
 | | _Standalone daemon binary listening on a Unix socket using length-prefixed JSON. Op handling is shared with the probe via crates/hermes-state/src/ops.rs so they cannot drift. RustSessionDB(boundary="daemon") autospawns the daemon, connects, and routes ops over the socket; HERMES_STATE_BOUNDARY env var honored. Subprocess boundary remains the default for back-compat. Idle daemon shuts down after 5 min by default._ |  |  |  |  |
-| `hermes-izz.2` | Match SessionDB write contention and WAL behavior | `planned` | `hermes_state.py` | `crates/hermes-state` | `tests/parity/state/test_contention.py` |
-| | _WAL, retry-with-jitter, busy_timeout — must match Python under contention._ |  |  |  |  |
+| `hermes-izz.2` | Match SessionDB write contention and WAL behavior | `tested` | `hermes_state.py` | `crates/hermes-state/src/bin/hermes_state_daemon.rs (Mutex<SessionStore>)` | `tests/parity/state/test_daemon_concurrency.py + crates/hermes-state/tests/daemon.rs` |
+| | _Daemon handles connections concurrently (thread-per-connection with a shared Mutex<SessionStore>) so a long-lived client never blocks others. SQLite remains single-writer through the mutex, which sidesteps the multi-process WAL retry-with-jitter loop the Python SessionDB needs. 8 concurrent writers x 10 ops each round-trip without data loss; per-thread FIFO ordering preserved; bad ops from one client do not taint others._ |  |  |  |  |
 | `hermes-izz.3` | State backend observability and rollback diagnostics | `in_progress` | `hermes_state_rust.py`<br>`hermes_state_factory.py` | `crates/hermes-state` | `tests/parity/state/test_diagnostics.py` |
 | | _RustSessionDB.diagnostics() exposes backend, boundary, db_path, schema_version, op_count, error_count, last_error. Factory merges adapter snapshot into state_backend_diagnostics(db). Rollback diagnostics still pending._ |  |  |  |  |
 | `hermes-izz.4` | Benchmark Rust state store against Python baseline | `planned` | `hermes_state.py` | `crates/hermes-state/benches/` | `scripts/bench_state.sh (planned)` |

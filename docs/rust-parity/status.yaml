@@ -301,10 +301,10 @@ epics:
         story: Match SessionDB write contention and WAL behavior
         python_paths:
           - hermes_state.py
-        rust_target: crates/hermes-state
-        status: planned
-        ci_gate: tests/parity/state/test_contention.py
-        notes: WAL, retry-with-jitter, busy_timeout — must match Python under contention.
+        rust_target: crates/hermes-state/src/bin/hermes_state_daemon.rs (Mutex<SessionStore>)
+        status: tested
+        ci_gate: tests/parity/state/test_daemon_concurrency.py + crates/hermes-state/tests/daemon.rs
+        notes: Daemon handles connections concurrently (thread-per-connection with a shared Mutex<SessionStore>) so a long-lived client never blocks others. SQLite remains single-writer through the mutex, which sidesteps the multi-process WAL retry-with-jitter loop the Python SessionDB needs. 8 concurrent writers x 10 ops each round-trip without data loss; per-thread FIFO ordering preserved; bad ops from one client do not taint others.
       - bead: hermes-izz.3
         story: State backend observability and rollback diagnostics
         python_paths:
