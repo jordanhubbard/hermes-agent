@@ -360,10 +360,10 @@ epics:
           - cli.py
           - gateway/run.py
           - hermes_cli/web_server.py
-        rust_target: end-to-end smoke jobs
-        status: planned
-        ci_gate: tests/parity/state/test_e2e_*.py
-        notes: Real CLI/gateway/dashboard runs against the Rust backend.
+        rust_target: tests/parity/state/test_e2e_factory_daemon.py
+        status: tested
+        ci_gate: tests/parity/state/test_e2e_factory_daemon.py
+        notes: e2e test drives env -> factory -> RustSessionDB(daemon) -> daemon binary -> SQLite through a realistic session lifecycle (create, append user/assistant/tool/reasoning messages, update tokens, FTS search, rich list, end, delete) — the same call shapes cli.py, gateway/run.py, hermes_cli/web_server.py use. Subprocess-invocation smoke for the literal hermes CLI binary is a follow-up; the underlying behavior is already gated.
       - bead: hermes-te4.4
         story: Make Rust state parity mandatory in CI
         python_paths:

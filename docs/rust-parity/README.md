@@ -22,10 +22,10 @@ Tracks the migration of Hermes subsystems from Python to Rust. Source of truth: 
 
 | Status | Count | Share |
 | --- | ---: | ---: |
-| `planned` | 23 | 72% |
+| `planned` | 22 | 69% |
 | `in_progress` | 4 | 12% |
 | `ported` | 0 | 0% |
-| `tested` | 5 | 16% |
+| `tested` | 6 | 19% |
 | `production_wired` | 0 | 0% |
 | `default` | 0 | 0% |
 | `deferred` | 0 | 0% |
@@ -146,8 +146,8 @@ Replace direct SessionDB construction with a backend factory and exercise the Ru
 | | _Factory landed; all production SessionDB() callsites migrated. Static-method imports (SessionDB.sanitize_title) intentionally left in place._ |  |  |  |  |
 | `hermes-te4.2` | Add supported Rust state backend selection and diagnostics | `tested` | `hermes_state_factory.py` | `HERMES_STATE_BACKEND env + state.backend config key` | `tests/parity/state/test_factory.py` |
 | | _Selection order arg → env → config → default(python). Explicit (arg/env) Rust failures raise; config-driven failures fall back to Python with a logged warning. state_backend_diagnostics() reports backend, source, fallback_reason, and (with db arg) merges adapter diagnostics._ |  |  |  |  |
-| `hermes-te4.3` | Exercise Rust state backend in real production entry points | `planned` | `cli.py`<br>`gateway/run.py`<br>`hermes_cli/web_server.py` | `end-to-end smoke jobs` | `tests/parity/state/test_e2e_*.py` |
-| | _Real CLI/gateway/dashboard runs against the Rust backend._ |  |  |  |  |
+| `hermes-te4.3` | Exercise Rust state backend in real production entry points | `tested` | `cli.py`<br>`gateway/run.py`<br>`hermes_cli/web_server.py` | `tests/parity/state/test_e2e_factory_daemon.py` | `tests/parity/state/test_e2e_factory_daemon.py` |
+| | _e2e test drives env -> factory -> RustSessionDB(daemon) -> daemon binary -> SQLite through a realistic session lifecycle (create, append user/assistant/tool/reasoning messages, update tokens, FTS search, rich list, end, delete) — the same call shapes cli.py, gateway/run.py, hermes_cli/web_server.py use. Subprocess-invocation smoke for the literal hermes CLI binary is a follow-up; the underlying behavior is already gated._ |  |  |  |  |
 | `hermes-te4.4` | Make Rust state parity mandatory in CI | `planned` | `.github/workflows/tests.yml` | `required CI job` | `GitHub Actions required check` |
 | | _Once green for two weeks, parity job becomes required._ |  |  |  |  |
 
