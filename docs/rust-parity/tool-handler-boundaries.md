@@ -11,19 +11,34 @@ Native Rust handler coverage:
 - `write_file` directory creation and byte count reporting
 - `patch` replace-mode success/error semantics at the result-envelope level
 - sensitive write denial for protected system paths
+- `todo` validation, replace/merge semantics, summary counts, and
+  post-compression active-task injection formatting
 
-Documented Python boundaries:
+Documented deletion-blocking boundaries:
 
 - `terminal/process`: execution backends, PTY handling, background readers,
-  checkpoint recovery, and gateway watchers stay in Python.
+  checkpoint recovery, `execute_code`, and gateway watchers stay in Python
+  until a Rust process daemon or external process-host adapter exists.
 - `browser/web`: live Playwright/CDP sessions and provider-backed network
-  search/extraction stay in Python.
+  search/extraction stay in Python until a Rust backend or external browser
+  service contract exists.
 - `delegate/subagent`: subagent lifecycle, approval callback propagation, and
-  process-global toolset state stay in Python.
+  process-global toolset state stay in Python until delegated turns run through
+  the Rust agent runtime.
 - `mcp`: dynamically discovered server adapters stay in Python.
-- `memory/todo`: agent-loop-intercepted tools stay at the agent
-  boundary rather than ordinary registry dispatch.
-- `media`: optional provider SDKs, local binaries, and binary artifacts stay
-  in Python.
+- `memory/session`: memory providers and session search stay in Python until
+  Rust owns the memory/context-engine and session-search path.
+- `media`: optional provider SDKs, local binaries, and binary artifacts stay in
+  Python until Rust provider clients or an external media service are selected.
+- `skills`: discovery, frontmatter parsing, install/update/audit, provenance,
+  config prompts, and prompt-cache-aware injection stay in Python.
+- `clarify`: UI callbacks stay in the Python CLI/gateway platform layer until
+  those runtimes are Rust-owned.
+- `cron/messaging/homeassistant`: scheduler state, gateway delivery, and
+  Home Assistant network clients stay behind Python integration runtimes.
+- `kanban`: dispatcher task state and worker ownership checks stay in Python
+  until `kanban_db` and worker-context APIs are Rust-owned or externalized.
 
-Parity gate: `tests/parity/tools/test_handlers.py`.
+Parity gate: `tests/parity/tools/test_handlers.py`. The gate fails if any core
+tool from `crates/hermes-tools/src/tool_registry_snapshot.json` is neither in
+the native Rust list nor in an explicit boundary with a deletion plan.
