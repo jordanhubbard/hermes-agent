@@ -67,8 +67,10 @@ def test_full_parity_epic_tracks_python_removal_gate() -> None:
     assert rows[1]["status"] == "tested"
     assert "test_rust_launcher.py" in rows[1]["ci_gate"]
     assert rows[2]["bead"] == "hermes-fpr.3"
-    assert rows[2]["status"] == "in_progress"
+    assert rows[2]["status"] == "tested"
     assert "provider_http.rs" in rows[2]["rust_target"]
+    assert "runtime_state.rs" in rows[2]["rust_target"]
+    assert "test_rust_launcher.py" in rows[2]["ci_gate"]
     assert rows[-1]["bead"] == "hermes-fpr.10"
     assert "remove Python sources" in rows[-1]["story"]
     assert rows[-1]["status"] == "planned"

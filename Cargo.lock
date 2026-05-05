@@ -282,6 +282,7 @@ dependencies = [
 name = "hermes-agent-core"
 version = "0.1.0"
 dependencies = [
+ "hermes-state",
  "serde",
  "serde_json",
  "ureq",
@@ -291,6 +292,7 @@ dependencies = [
 name = "hermes-cli"
 version = "0.1.0"
 dependencies = [
+ "hermes-agent-core",
  "serde",
  "serde_json",
 ]

@@ -68,6 +68,20 @@ def test_rust_runtime_has_native_smoke_command() -> None:
     assert result.stdout.startswith("hermes rust launcher ")
 
 
+def test_rust_runtime_has_native_agent_runtime_smoke_command() -> None:
+    result = _run_launcher("agent-runtime-smoke", env={"HERMES_RUNTIME": "rust"})
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload == {
+        "ok": True,
+        "final_message": "rust runtime smoke ok",
+        "model_call_count": 2,
+        "tool_call_count": 1,
+        "message_count": 4,
+    }
+
+
 def test_rust_runtime_rejects_unported_commands_without_python_import() -> None:
     result = _run_launcher("gateway", "status", env={"HERMES_RUNTIME": "rust"})
 

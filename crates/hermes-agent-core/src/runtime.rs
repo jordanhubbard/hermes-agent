@@ -136,6 +136,8 @@ pub trait ConversationStore {
     fn persist_message(&mut self, message: &Message);
     /// Persist one compression event.
     fn persist_compression(&mut self, event: &CompressionEvent);
+    /// Persist final token/accounting totals.
+    fn persist_token_update(&mut self, _budget: &ConversationBudget, _model_call_count: u32) {}
 }
 
 /// Lifecycle hook boundary used by the runtime.
@@ -420,6 +422,7 @@ fn finish(
     compression_events: Vec<CompressionEvent>,
     deps: RuntimeDeps<'_>,
 ) -> AgentRuntimeResult {
+    deps.store.persist_token_update(&budget, model_call_count);
     deps.hooks.on_session_end(&outcome);
     AgentRuntimeResult {
         outcome,
@@ -452,10 +455,10 @@ fn apply_runtime_compression(
             provider_error: None,
         },
     );
+    store.persist_compression(&plan.event);
     for message in &plan.retained_messages {
         store.persist_message(message);
     }
-    store.persist_compression(&plan.event);
     *messages = plan.retained_messages;
     Some(plan.event)
 }

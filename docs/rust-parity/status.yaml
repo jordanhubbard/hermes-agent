@@ -423,10 +423,10 @@ epics:
           - run_agent.py
           - agent/
           - model_tools.py
-        rust_target: crates/hermes-agent-core/src/provider_http.rs + crates/hermes-agent-core/src/runtime.rs
-        status: in_progress
-        ci_gate: cargo test -p hermes-agent-core --test provider_http --test runtime
-        notes: Provider HTTP execution now reuses provider_wire request/response parity and has mock OpenAI-compatible E2E tests for request URL, auth/header forwarding, body shape, parsed assistant response, usage, 429 retry classification, and streaming SSE delta collection. Runtime.rs adds a production-shaped synchronous loop over model/tool/store/hook traits with fallback, interrupt-before-call, budget usage accumulation, compression planning, tool dispatch, persistence callbacks, and lifecycle hooks. Remaining blockers include credential selection/pools, direct Rust state persistence, Python-parity lifecycle hook adapters, and Rust-default launcher E2E.
+        rust_target: crates/hermes-agent-core/src/provider_http.rs + crates/hermes-agent-core/src/runtime.rs + crates/hermes-agent-core/src/runtime_state.rs
+        status: tested
+        ci_gate: cargo test -p hermes-agent-core --test provider_http --test runtime --test credentials --test runtime_state + tests/parity/cli/test_rust_launcher.py
+        notes: Provider HTTP execution reuses provider_wire request/response parity and has mock OpenAI-compatible E2E tests for request URL, auth/header forwarding, body shape, parsed assistant response, usage, 429 retry classification, and streaming SSE delta collection. Credential resolution covers explicit keys, provider env ordering, aliases, same-provider pools, disabled entries, and secret redaction. Runtime.rs adds a production-shaped synchronous loop over model/tool/store/hook traits with fallback, interrupt-before-call, budget usage accumulation, compression planning, tool dispatch, persistence callbacks, token accounting, and lifecycle hooks. StateConversationStore persists runtime messages, tool calls, reasoning, token totals, and compression lineage through hermes-state. The Rust launcher now has HERMES_RUNTIME=rust hermes agent-runtime-smoke to prove the installed Rust binary can execute the runtime slice without importing Python. This does not make Hermes fully Rust-default; tool handlers, gateway, CLI, integrations, plugins/skills, shadow execution, and Python deletion remain tracked by later fpr rows.
       - bead: hermes-fpr.4
         story: Port all tool handlers or gate explicit non-removable boundaries
         python_paths:
