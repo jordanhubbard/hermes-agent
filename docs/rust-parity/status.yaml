@@ -471,7 +471,7 @@ epics:
         rust_target: crates/hermes-tui-gateway + crates/hermes-dashboard + crates/hermes-acp + crates/hermes-integrations
         status: in_progress
         ci_gate: TUI/dashboard/ACP/cron/batch/MCP/RL E2E tests with Rust runtime
-        notes: Started production integration cutover with Rust-owned `hermes cron status`, matching Python for no-gateway status, active-job counting, disabled-job exclusion, and next-run display from cron/jobs.json. Remaining TUI gateway, dashboard backend, ACP, cron tick/scheduler execution, batch, MCP, RL, real session/state/tool/provider integration, and delivery runtimes remain Python-owned.
+        notes: Started production integration cutover with Rust-owned `hermes cron status` and `hermes cron list [--all]`, matching Python for no-gateway status, active-job counting, disabled-job exclusion, next-run display, empty-list messaging, job table rendering, disabled-job inclusion, skill normalization, repeat/delivery/script/workdir/last-run fields, and gateway-not-running warnings from cron/jobs.json. Remaining TUI gateway, dashboard backend, ACP, cron create/edit/pause/resume/run/remove/tick scheduler execution, batch, MCP, RL, real session/state/tool/provider integration, and delivery runtimes remain Python-owned.
       - bead: hermes-fpr.8
         story: Preserve skills and define Rust plugin migration policy without in-repo Python
         python_paths:

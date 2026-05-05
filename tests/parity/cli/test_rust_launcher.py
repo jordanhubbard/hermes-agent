@@ -504,6 +504,77 @@ def test_rust_runtime_cron_status_matches_python_active_jobs(tmp_path: Path) -> 
     assert rust.stdout == python.stdout
 
 
+def test_rust_runtime_cron_list_matches_python_no_jobs(tmp_path: Path) -> None:
+    hermes_home = tmp_path / "hermes-home"
+    hermes_home.mkdir()
+
+    env = {"HERMES_HOME": str(hermes_home)}
+    rust = _run_launcher("cron", "list", env={**env, "HERMES_RUNTIME": "rust"})
+    python = _run_python_cli("cron", "list", env=env)
+
+    assert rust.returncode == 0, rust.stderr
+    assert python.returncode == 0, python.stderr
+    assert rust.stdout == python.stdout
+
+
+def test_rust_runtime_cron_list_matches_python_jobs_and_all_flag(tmp_path: Path) -> None:
+    hermes_home = tmp_path / "hermes-home"
+    cron_dir = hermes_home / "cron"
+    cron_dir.mkdir(parents=True)
+    (cron_dir / "jobs.json").write_text(
+        json.dumps(
+            {
+                "jobs": [
+                    {
+                        "id": "job-a",
+                        "name": "Alpha",
+                        "schedule_display": "every 5 minutes",
+                        "schedule": {"value": "5m"},
+                        "state": "scheduled",
+                        "enabled": True,
+                        "next_run_at": "2026-05-06T09:00:00+00:00",
+                        "repeat": {"times": 3, "completed": 1},
+                        "deliver": ["local", "telegram"],
+                        "skills": ["foo", "bar"],
+                        "script": "/tmp/job.py",
+                        "workdir": "/tmp",
+                        "last_status": "ok",
+                        "last_run_at": "2026-05-05T09:00:00+00:00",
+                    },
+                    {
+                        "id": "job-b",
+                        "name": "Beta",
+                        "schedule": {"value": "1h"},
+                        "enabled": False,
+                        "next_run_at": "2026-05-06T10:00:00+00:00",
+                        "last_status": "error",
+                        "last_error": "bad",
+                        "last_run_at": "2026-05-05T10:00:00+00:00",
+                        "last_delivery_error": "send failed",
+                    },
+                    {
+                        "id": "job-c",
+                        "skill": "legacy",
+                        "enabled": True,
+                        "schedule": {"value": "?"},
+                        "repeat": {},
+                        "deliver": "slack",
+                    },
+                ]
+            }
+        )
+    )
+
+    env = {"HERMES_HOME": str(hermes_home)}
+    for args in [("cron", "list"), ("cron", "list", "--all")]:
+        rust = _run_launcher(*args, env={**env, "HERMES_RUNTIME": "rust"})
+        python = _run_python_cli(*args, env=env)
+
+        assert rust.returncode == 0, rust.stderr
+        assert python.returncode == 0, python.stderr
+        assert rust.stdout == python.stdout
+
+
 def test_rust_runtime_plugins_list_matches_python(tmp_path: Path) -> None:
     hermes_home = tmp_path / "hermes-home"
     bundled = tmp_path / "bundled-plugins"
