@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde::Serialize;
 
+pub mod config_command;
 pub mod display;
 pub mod gateway_status;
 pub mod integrations_status;
@@ -12,6 +13,7 @@ pub mod profile;
 pub mod setup;
 pub mod skills;
 
+pub use config_command::{run_config_set_command, ConfigCommandOutcome};
 pub use display::{
     builtin_skin_surfaces, logging_plan, render_status, CliStatusInput, LoggingPlan, SkinSurface,
 };

@@ -279,6 +279,96 @@ def test_rust_runtime_config_paths_respect_profile_flag(tmp_path: Path) -> None:
     assert rust.stdout == python.stdout
 
 
+def test_rust_runtime_config_set_matches_python(tmp_path: Path) -> None:
+    rust_home = tmp_path / "rust-home"
+    python_home = tmp_path / "python-home"
+    rust_home.mkdir()
+    python_home.mkdir()
+
+    rust_env = {"HERMES_HOME": str(rust_home), "HERMES_RUNTIME": "rust"}
+    python_env = {"HERMES_HOME": str(python_home)}
+    for args in (
+        ("config", "set", "terminal.timeout", "123"),
+        ("config", "set", "display.show_reasoning", "true"),
+        ("config", "set", "model", "anthropic/claude-sonnet-4"),
+        ("config", "set", "OPENAI_API_KEY", "sk-test"),
+    ):
+        rust = _run_launcher(*args, env=rust_env)
+        python = _run_python_cli(*args, env=python_env)
+
+        assert rust.returncode == 0, rust.stderr
+        assert python.returncode == 0, python.stderr
+        assert rust.stdout.replace(str(rust_home), str(python_home)) == python.stdout
+
+    assert _load_yaml(rust_home / "config.yaml") == _load_yaml(python_home / "config.yaml")
+    assert (rust_home / ".env").read_text() == (python_home / ".env").read_text()
+
+
+def test_rust_runtime_config_set_list_index_matches_python(tmp_path: Path) -> None:
+    rust_home = tmp_path / "rust-home"
+    python_home = tmp_path / "python-home"
+    seed = "custom_providers:\n  - name: a\n    models:\n      - old\n"
+    for home in (rust_home, python_home):
+        home.mkdir()
+        (home / "config.yaml").write_text(seed)
+
+    rust = _run_launcher(
+        "config",
+        "set",
+        "custom_providers.0.models.0",
+        "new",
+        env={"HERMES_HOME": str(rust_home), "HERMES_RUNTIME": "rust"},
+    )
+    python = _run_python_cli(
+        "config",
+        "set",
+        "custom_providers.0.models.0",
+        "new",
+        env={"HERMES_HOME": str(python_home)},
+    )
+
+    assert rust.returncode == 0, rust.stderr
+    assert python.returncode == 0, python.stderr
+    assert rust.stdout.replace(str(rust_home), str(python_home)) == python.stdout
+    assert _load_yaml(rust_home / "config.yaml") == _load_yaml(python_home / "config.yaml")
+
+
+def test_rust_runtime_config_set_respects_profile_flag(tmp_path: Path) -> None:
+    rust_root = tmp_path / "rust-root"
+    python_root = tmp_path / "python-root"
+    (rust_root / "profiles" / "coder").mkdir(parents=True)
+    (python_root / "profiles" / "coder").mkdir(parents=True)
+
+    rust = _run_launcher(
+        "-p",
+        "coder",
+        "config",
+        "set",
+        "terminal.timeout",
+        "45",
+        env={"HERMES_HOME": str(rust_root), "HERMES_RUNTIME": "rust"},
+    )
+    python = _run_python_cli(
+        "-p",
+        "coder",
+        "config",
+        "set",
+        "terminal.timeout",
+        "45",
+        env={"HERMES_HOME": str(python_root)},
+    )
+
+    rust_profile = rust_root / "profiles" / "coder"
+    python_profile = python_root / "profiles" / "coder"
+    assert rust.returncode == 0, rust.stderr
+    assert python.returncode == 0, python.stderr
+    assert rust.stdout.replace(str(rust_profile), str(python_profile)) == python.stdout
+    assert _load_yaml(rust_profile / "config.yaml") == _load_yaml(
+        python_profile / "config.yaml"
+    )
+    assert (rust_profile / ".env").read_text() == (python_profile / ".env").read_text()
+
+
 def test_rust_runtime_logs_list_matches_python(tmp_path: Path) -> None:
     hermes_home = tmp_path / "hermes-home"
     logs_dir = hermes_home / "logs"
