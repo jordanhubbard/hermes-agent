@@ -48,6 +48,12 @@ The `hermes-fpr` epic in `status.yaml` is the source of truth. The rows are:
 - Run shadow Python-vs-Rust execution and diffing for representative flows.
 - Flip Rust to default and complete the Python removal gate.
 
+The detailed `hermes-fpr.1` audit is in
+`docs/rust-parity/entrypoint-audit.md`. It records that the installed
+`hermes`, `hermes-agent`, and `hermes-acp` commands are still Python-primary,
+and that existing Rust crates prove scoped contracts rather than top-level
+runtime ownership.
+
 ## Cutover Rules
 
 Each workstream must pass through the existing ladder:
@@ -77,4 +83,3 @@ The final Python deletion is blocked until:
   parity.
 - Shipping a Rust facade that shells out to in-repo Python as the final
   architecture.
-

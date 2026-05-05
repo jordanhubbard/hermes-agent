@@ -403,10 +403,10 @@ epics:
           - rl_cli.py
           - tools/
           - plugins/
-        rust_target: docs/rust-parity/full-parity-plan.md + docs/rust-parity/status.yaml
-        status: planned
+        rust_target: docs/rust-parity/entrypoint-audit.md + docs/rust-parity/full-parity-plan.md + docs/rust-parity/status.yaml
+        status: tested
         ci_gate: tests/parity/test_full_parity_plan.py
-        notes: Produce an entry-point inventory that distinguishes contract-tested Rust code from Rust-primary production ownership, including blockers, deletion risks, and required smoke tests.
+        notes: Entry-point audit records that no installed user-facing Hermes command is Rust-primary yet. It maps CLI, agent, gateway, TUI, dashboard, ACP, cron, batch, MCP, tools, skills, plugins, state, and packaging surfaces to current Rust ownership, blockers, deletion risks, and required smoke tests.
       - bead: hermes-fpr.2
         story: Ship a Rust-owned hermes binary and runtime selector
         python_paths:

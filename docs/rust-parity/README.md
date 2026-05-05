@@ -24,10 +24,10 @@ Tracks the migration of Hermes subsystems from Python to Rust. Source of truth: 
 
 | Status | Count | Share |
 | --- | ---: | ---: |
-| `planned` | 10 | 24% |
+| `planned` | 9 | 21% |
 | `in_progress` | 0 | 0% |
 | `ported` | 0 | 0% |
-| `tested` | 32 | 76% |
+| `tested` | 33 | 79% |
 | `production_wired` | 0 | 0% |
 | `default` | 0 | 0% |
 | `deferred` | 0 | 0% |
@@ -159,8 +159,8 @@ Convert scoped Rust parity into a Rust-primary production runtime and remove Pyt
 
 | Bead | Story | Status | Python | Rust target | CI gate |
 | --- | --- | --- | --- | --- | --- |
-| `hermes-fpr.1` | Audit every Python entry point against Rust-primary ownership | `planned` | `run_agent.py`<br>`cli.py`<br>`hermes_cli/main.py`<br>`gateway/run.py`<br>`tui_gateway/server.py`<br>`hermes_cli/web_server.py`<br>`acp_adapter/`<br>`cron/`<br>`batch_runner.py`<br>`mcp_serve.py`<br>`rl_cli.py`<br>`tools/`<br>`plugins/` | `docs/rust-parity/full-parity-plan.md + docs/rust-parity/status.yaml` | `tests/parity/test_full_parity_plan.py` |
-| | _Produce an entry-point inventory that distinguishes contract-tested Rust code from Rust-primary production ownership, including blockers, deletion risks, and required smoke tests._ |  |  |  |  |
+| `hermes-fpr.1` | Audit every Python entry point against Rust-primary ownership | `tested` | `run_agent.py`<br>`cli.py`<br>`hermes_cli/main.py`<br>`gateway/run.py`<br>`tui_gateway/server.py`<br>`hermes_cli/web_server.py`<br>`acp_adapter/`<br>`cron/`<br>`batch_runner.py`<br>`mcp_serve.py`<br>`rl_cli.py`<br>`tools/`<br>`plugins/` | `docs/rust-parity/entrypoint-audit.md + docs/rust-parity/full-parity-plan.md + docs/rust-parity/status.yaml` | `tests/parity/test_full_parity_plan.py` |
+| | _Entry-point audit records that no installed user-facing Hermes command is Rust-primary yet. It maps CLI, agent, gateway, TUI, dashboard, ACP, cron, batch, MCP, tools, skills, plugins, state, and packaging surfaces to current Rust ownership, blockers, deletion risks, and required smoke tests._ |  |  |  |  |
 | `hermes-fpr.2` | Ship a Rust-owned hermes binary and runtime selector | `planned` | `hermes_cli/main.py`<br>`pyproject.toml`<br>`scripts/install.sh` | `crates/hermes-cli + top-level hermes binary` | `clean-install smoke with HERMES_RUNTIME=rust and HERMES_RUNTIME=python` |
 | | _The Rust binary must own command dispatch and select Python only as an explicit fallback during rollout; install/update packaging must install the Rust path on all supported platforms._ |  |  |  |  |
 | `hermes-fpr.3` | Make the Rust agent loop production-capable | `planned` | `run_agent.py`<br>`agent/`<br>`model_tools.py` | `crates/hermes-agent-core` | `real provider/mock-server E2E plus parity fixtures under Rust default` |
