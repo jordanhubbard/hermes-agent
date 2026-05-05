@@ -278,6 +278,19 @@ def test_rust_runtime_gateway_status_health_lines_match_python(tmp_path: Path) -
     assert rust.stdout == python.stdout
 
 
+def test_rust_runtime_gateway_stop_matches_python_not_running(tmp_path: Path) -> None:
+    hermes_home = tmp_path / "hermes-home"
+    hermes_home.mkdir()
+
+    env = {"HERMES_HOME": str(hermes_home)}
+    rust = _run_launcher("gateway", "stop", env={**env, "HERMES_RUNTIME": "rust"})
+    python = _run_python_cli("gateway", "stop", env=env)
+
+    assert rust.returncode == 0, rust.stderr
+    assert python.returncode == 0, python.stderr
+    assert rust.stdout == python.stdout
+
+
 def test_rust_runtime_config_paths_match_python(tmp_path: Path) -> None:
     hermes_home = tmp_path / "hermes-home"
     hermes_home.mkdir()

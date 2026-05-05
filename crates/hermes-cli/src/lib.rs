@@ -17,7 +17,9 @@ pub use config_command::{run_config_set_command, ConfigCommandOutcome};
 pub use display::{
     builtin_skin_surfaces, logging_plan, render_status, CliStatusInput, LoggingPlan, SkinSurface,
 };
-pub use gateway_status::{gateway_status, render_gateway_status, GatewayStatus};
+pub use gateway_status::{
+    gateway_status, render_gateway_status, run_gateway_stop_command, GatewayStatus,
+};
 pub use integrations_status::{cron_status, render_cron_status, CronStatus};
 pub use logs::{run_logs_command, LogsOutcome};
 pub use plugins::{run_plugins_command, PluginsOutcome};

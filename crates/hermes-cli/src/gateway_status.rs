@@ -48,6 +48,16 @@ pub fn render_gateway_status(status: &GatewayStatus) -> String {
     output
 }
 
+pub fn run_gateway_stop_command(hermes_home: &Path) -> (String, i32) {
+    if hermes_home.join("gateway.pid").exists() || hermes_home.join("gateway.lock").exists() {
+        return (
+            "HERMES_RUNTIME=rust selected, but stopping a running gateway is not Rust-owned yet. Use HERMES_RUNTIME=python for the rollout fallback.\n".to_string(),
+            78,
+        );
+    }
+    ("✗ No gateway running for this profile\n".to_string(), 0)
+}
+
 fn append_runtime_health(output: &mut String, lines: &[String]) {
     if lines.is_empty() {
         return;

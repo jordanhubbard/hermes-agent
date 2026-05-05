@@ -87,6 +87,12 @@ pub fn is_rust_gateway_status_request(args: &[OsString]) -> bool {
         && args.get(1).is_some_and(|arg| arg == OsStr::new("status"))
 }
 
+pub fn is_rust_gateway_stop_request(args: &[OsString]) -> bool {
+    args.len() == 2
+        && args.first().is_some_and(|arg| arg == OsStr::new("gateway"))
+        && args.get(1).is_some_and(|arg| arg == OsStr::new("stop"))
+}
+
 pub fn is_rust_config_path_request(args: &[OsString]) -> bool {
     args.len() == 2
         && args.first().is_some_and(|arg| arg == OsStr::new("config"))
@@ -141,6 +147,7 @@ Usage:\n  hermes [--runtime-info]\n  HERMES_RUNTIME=python hermes [args...]\n  H
   HERMES_RUNTIME=rust hermes config path\n\
   HERMES_RUNTIME=rust hermes config set <key> <value>\n\
   HERMES_RUNTIME=rust hermes cron status\n\
+  HERMES_RUNTIME=rust hermes gateway stop\n\
   HERMES_RUNTIME=rust hermes gateway status\n\
   HERMES_RUNTIME=rust hermes logs [list|agent|errors|gateway]\n\
   HERMES_RUNTIME=rust hermes plugins [list|enable|disable]\n\
@@ -244,6 +251,10 @@ mod tests {
         assert!(is_rust_gateway_status_request(&[
             OsString::from("gateway"),
             OsString::from("status")
+        ]));
+        assert!(is_rust_gateway_stop_request(&[
+            OsString::from("gateway"),
+            OsString::from("stop")
         ]));
         assert!(is_rust_config_path_request(&[
             OsString::from("config"),

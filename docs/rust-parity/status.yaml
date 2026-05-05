@@ -446,7 +446,7 @@ epics:
         rust_target: crates/hermes-gateway
         status: in_progress
         ci_gate: gateway smoke matrix for every built-in platform adapter with Rust runtime
-        notes: Started production gateway CLI cutover with Rust-owned `hermes gateway status` for the no-service/manual status path, including not-running output and recent runtime health lines from gateway_state.json matched against Python. Remaining gateway lifecycle, run/start/stop/restart/install/uninstall/setup flows, systemd/launchd/Termux/WSL branches, process scanning/token locks, session guards, approvals, background notifications, slash commands, delivery, restart/update behavior, and platform adapter smokes remain Python-owned.
+        notes: Started production gateway CLI cutover with Rust-owned `hermes gateway status` for the no-service/manual status path and `hermes gateway stop` for the no-running profile path, including not-running output and recent runtime health lines from gateway_state.json matched against Python. Actual gateway termination still falls back when pid/lock files exist. Remaining gateway lifecycle, run/start/running-stop/restart/install/uninstall/setup flows, systemd/launchd/Termux/WSL branches, process scanning/token locks, session guards, approvals, background notifications, slash commands, delivery, restart/update behavior, and platform adapter smokes remain Python-owned.
       - bead: hermes-fpr.6
         story: Port CLI setup/auth/model/config/update/profile/log/skin surfaces
         python_paths:
