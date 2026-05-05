@@ -30,6 +30,9 @@ Native Rust handler coverage:
   blocked service domains, entity filtering by domain/area, state result
   envelopes, service-list compaction, service payload construction, and service
   response parsing
+- `cronjob` API validation and local CRUD result shaping for prompt scanning,
+  schedule/repeat/deliver normalization, create/list/update/pause/resume/remove
+  envelopes, and deterministic job formatting
 
 Documented deletion-blocking boundaries:
 
@@ -54,8 +57,10 @@ Documented deletion-blocking boundaries:
   service boundary.
 - `clarify`: only the UI callbacks stay in the Python CLI/gateway platform
   layer until those runtimes are Rust-owned.
-- `cron/messaging`: scheduler state and gateway delivery/send_message clients
-  stay behind Python integration runtimes.
+- `cron/messaging`: native `cronjob` API semantics still need production
+  scheduler persistence, tick execution, AIAgent invocation, and gateway
+  delivery wiring; `send_message` clients stay behind Python integration
+  runtimes until Rust adapters or an external delivery service exist.
 - `homeassistant`: native handler semantics still need production Rust HTTP
   client wiring with credential/config loading.
 - `kanban`: dispatcher task state and worker ownership checks stay in Python

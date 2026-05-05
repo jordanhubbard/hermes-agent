@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Number, Value};
 
 pub mod clarify;
+pub mod cronjob;
 pub mod handlers;
 pub mod homeassistant;
 pub mod memory;
