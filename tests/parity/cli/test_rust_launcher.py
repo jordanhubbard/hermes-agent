@@ -7,6 +7,7 @@ import os
 import shutil
 import stat
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -36,6 +37,20 @@ def _run_launcher(*args: str, env: dict[str, str] | None = None) -> subprocess.C
             "--",
             *args,
         ],
+        cwd=REPO_ROOT,
+        env=merged_env,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+
+
+def _run_python_cli(*args: str, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+    merged_env = os.environ.copy()
+    if env:
+        merged_env.update(env)
+    return subprocess.run(
+        [sys.executable, "-m", "hermes_cli.main", *args],
         cwd=REPO_ROOT,
         env=merged_env,
         capture_output=True,
@@ -80,6 +95,44 @@ def test_rust_runtime_has_native_agent_runtime_smoke_command() -> None:
         "tool_call_count": 1,
         "message_count": 4,
     }
+
+
+def test_rust_runtime_profile_status_matches_python_clean_profile(tmp_path: Path) -> None:
+    hermes_home = tmp_path / "hermes-home"
+    skill_dir = hermes_home / "skills" / "custom" / "alpha"
+    ignored_dir = hermes_home / "skills" / ".hub" / "ignored"
+    skill_dir.mkdir(parents=True)
+    ignored_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text("---\nname: alpha\n---\n")
+    (ignored_dir / "SKILL.md").write_text("---\nname: ignored\n---\n")
+    (hermes_home / "config.yaml").write_text(
+        "model:\n  default: gpt-test\n  provider: openai\n"
+    )
+
+    env = {"HERMES_HOME": str(hermes_home)}
+    rust = _run_launcher("profile", env={**env, "HERMES_RUNTIME": "rust"})
+    python = _run_python_cli("profile", env=env)
+
+    assert rust.returncode == 0, rust.stderr
+    assert python.returncode == 0, python.stderr
+    assert rust.stdout == python.stdout
+
+
+def test_rust_runtime_profile_flag_matches_python_named_profile(tmp_path: Path) -> None:
+    hermes_root = tmp_path / "hermes-root"
+    profile_home = hermes_root / "profiles" / "coder"
+    (profile_home / "skills" / "custom" / "coder").mkdir(parents=True)
+    (profile_home / "skills" / "custom" / "coder" / "SKILL.md").write_text(
+        "---\nname: coder\n---\n"
+    )
+
+    env = {"HERMES_HOME": str(hermes_root)}
+    rust = _run_launcher("-p", "coder", "profile", env={**env, "HERMES_RUNTIME": "rust"})
+    python = _run_python_cli("-p", "coder", "profile", env=env)
+
+    assert rust.returncode == 0, rust.stderr
+    assert python.returncode == 0, python.stderr
+    assert rust.stdout == python.stdout
 
 
 def test_rust_runtime_rejects_unported_commands_without_python_import() -> None:

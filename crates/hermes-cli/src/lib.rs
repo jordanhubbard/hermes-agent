@@ -4,10 +4,15 @@ use serde::Serialize;
 
 pub mod display;
 pub mod launcher;
+pub mod profile;
 pub mod setup;
 
 pub use display::{
     builtin_skin_surfaces, logging_plan, render_status, CliStatusInput, LoggingPlan, SkinSurface,
+};
+pub use profile::{
+    profile_status, render_profile_status, resolve_rust_profile_context, ProfileStatus,
+    RustProfileContext,
 };
 pub use setup::{
     apply_model_choice, determine_api_mode, provider_setup_def, secret_storage_plan,

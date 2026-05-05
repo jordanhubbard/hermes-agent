@@ -24,8 +24,8 @@ Tracks the migration of Hermes subsystems from Python to Rust. Source of truth: 
 
 | Status | Count | Share |
 | --- | ---: | ---: |
-| `planned` | 5 | 12% |
-| `in_progress` | 1 | 2% |
+| `planned` | 4 | 10% |
+| `in_progress` | 2 | 5% |
 | `ported` | 0 | 0% |
 | `tested` | 36 | 86% |
 | `production_wired` | 0 | 0% |
@@ -169,8 +169,8 @@ Convert scoped Rust parity into a Rust-primary production runtime and remove Pyt
 | | _Started the full handler cutover gate by adding native Rust todo semantics, clarify validation/result shaping, memory add/replace/remove/threat-scan/snapshot semantics, session_search dispatcher/recent/lineage/raw-preview semantics, local skills_list/skill_view plus skill_manage create/edit/patch/delete/supporting-file mutation semantics, cronjob API validation/local CRUD result shaping, Home Assistant validation/filtering/payload/result-envelope semantics, and an executable coverage check over all 45 core tools from the Rust registry snapshot. Current state remains not deletion-safe; terminal/process/execute_code, browser/web, delegate/subagent, MCP dynamic discovery, session_search production wiring to hermes-state plus auxiliary summarization, media, plugin/optional-skill/setup/provenance/slash-injection flows, clarify UI callbacks, cron scheduler persistence/tick execution/gateway delivery plus send_message clients, Home Assistant production HTTP wiring, and kanban are explicit deletion blockers with required Rust or external-service migration plans in docs/rust-parity/tool-handler-boundaries.md._ |  |  |  |  |
 | `hermes-fpr.5` | Port gateway runner and production platform adapters | `planned` | `gateway/run.py`<br>`gateway/platforms/`<br>`gateway/session.py` | `crates/hermes-gateway` | `gateway smoke matrix for every built-in platform adapter with Rust runtime` |
 | | _Move beyond adapter-boundary snapshots to real platform lifecycle, message guards, approvals, background notifications, token locks, slash commands, delivery, and restart/update behavior._ |  |  |  |  |
-| `hermes-fpr.6` | Port CLI setup/auth/model/config/update/profile/log/skin surfaces | `planned` | `cli.py`<br>`hermes_cli/`<br>`hermes_constants.py`<br>`hermes_logging.py` | `crates/hermes-cli + crates/hermes-config` | `CLI smoke suite from clean temp HOME and migrated profile fixtures` |
-| | _Rust must own setup wizard, auth, provider/model selection, config migration, profiles, logs, update flow, skins/display, skills commands, and interactive/non-interactive behavior._ |  |  |  |  |
+| `hermes-fpr.6` | Port CLI setup/auth/model/config/update/profile/log/skin surfaces | `in_progress` | `cli.py`<br>`hermes_cli/`<br>`hermes_constants.py`<br>`hermes_logging.py` | `crates/hermes-cli + crates/hermes-config` | `CLI smoke suite from clean temp HOME and migrated profile fixtures` |
+| | _Started the production CLI cutover with Rust launcher-side -p/--profile resolution for Rust-owned commands and a native bare `hermes profile` status command that matches Python for clean default and named profile homes, display paths, config model/provider rendering, and skill counts when no gateway is running. Remaining setup wizard, auth, provider/model selection, config migration commands, profile list/create/delete/show/alias/rename/export/import, live gateway-running detection in profile output, logs, update flow, skins/display mutation, skills commands, and interactive/TUI behavior remain Python-owned._ |  |  |  |  |
 | `hermes-fpr.7` | Port integration runtimes around the primary agent | `planned` | `tui_gateway/`<br>`hermes_cli/web_server.py`<br>`acp_adapter/`<br>`cron/`<br>`batch_runner.py`<br>`mcp_serve.py`<br>`rl_cli.py` | `crates/hermes-tui-gateway + crates/hermes-dashboard + crates/hermes-acp + crates/hermes-integrations` | `TUI/dashboard/ACP/cron/batch/MCP/RL E2E tests with Rust runtime` |
 | | _Snapshot contracts must become production implementations with real session/state/tool/provider integration._ |  |  |  |  |
 | `hermes-fpr.8` | Preserve skills and plugin compatibility without in-repo Python | `planned` | `skills/`<br>`optional-skills/`<br>`plugins/`<br>`hermes_cli/plugins.py` | `Rust plugin/skill loader ABI and migration tooling` | `built-in/user/pip plugin and skill compatibility suite under Rust runtime` |

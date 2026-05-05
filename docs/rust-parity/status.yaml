@@ -455,9 +455,9 @@ epics:
           - hermes_constants.py
           - hermes_logging.py
         rust_target: crates/hermes-cli + crates/hermes-config
-        status: planned
+        status: in_progress
         ci_gate: CLI smoke suite from clean temp HOME and migrated profile fixtures
-        notes: Rust must own setup wizard, auth, provider/model selection, config migration, profiles, logs, update flow, skins/display, skills commands, and interactive/non-interactive behavior.
+        notes: Started the production CLI cutover with Rust launcher-side -p/--profile resolution for Rust-owned commands and a native bare `hermes profile` status command that matches Python for clean default and named profile homes, display paths, config model/provider rendering, and skill counts when no gateway is running. Remaining setup wizard, auth, provider/model selection, config migration commands, profile list/create/delete/show/alias/rename/export/import, live gateway-running detection in profile output, logs, update flow, skins/display mutation, skills commands, and interactive/TUI behavior remain Python-owned.
       - bead: hermes-fpr.7
         story: Port integration runtimes around the primary agent
         python_paths:

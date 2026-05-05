@@ -81,9 +81,14 @@ pub fn is_rust_agent_runtime_smoke_request(args: &[OsString]) -> bool {
         .is_some_and(|arg| arg == OsStr::new("agent-runtime-smoke"))
 }
 
+pub fn is_rust_profile_status_request(args: &[OsString]) -> bool {
+    args.len() == 1 && args.first().is_some_and(|arg| arg == OsStr::new("profile"))
+}
+
 pub fn render_rust_help() -> &'static str {
     "Hermes Agent Rust launcher\n\n\
-Usage:\n  hermes [--runtime-info]\n  HERMES_RUNTIME=python hermes [args...]\n  HERMES_RUNTIME=rust hermes version\n  HERMES_RUNTIME=rust hermes agent-runtime-smoke\n\n\
+Usage:\n  hermes [--runtime-info]\n  HERMES_RUNTIME=python hermes [args...]\n  HERMES_RUNTIME=rust hermes version\n  HERMES_RUNTIME=rust hermes agent-runtime-smoke\n\
+  HERMES_RUNTIME=rust hermes profile\n\n\
 Runtime selection:\n  HERMES_RUNTIME=python  Run the production Python runtime through hermes_cli.main\n  HERMES_RUNTIME=rust    Run Rust-owned commands that have landed so far\n  HERMES_RUNTIME=auto    Use the rollout default\n\n\
 The Rust launcher owns process selection. Full Rust chat, gateway, TUI, dashboard,\n\
 ACP, tools, skills, and plugin parity is tracked by the hermes-fpr beads.\n"
@@ -179,6 +184,11 @@ mod tests {
         assert!(is_rust_agent_runtime_smoke_request(&[OsString::from(
             "agent-runtime-smoke"
         )]));
+        assert!(is_rust_profile_status_request(&[OsString::from("profile")]));
+        assert!(!is_rust_profile_status_request(&[
+            OsString::from("profile"),
+            OsString::from("list")
+        ]));
         assert!(!is_rust_version_request(&[OsString::from("gateway")]));
     }
 }

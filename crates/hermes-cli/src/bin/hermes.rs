@@ -10,9 +10,10 @@ use hermes_agent_core::{
 };
 use hermes_cli::launcher::{
     is_runtime_info_request, is_rust_agent_runtime_smoke_request, is_rust_help_request,
-    is_rust_version_request, python_command, render_rust_help, render_rust_version, runtime_info,
-    select_runtime, RuntimeSelection,
+    is_rust_profile_status_request, is_rust_version_request, python_command, render_rust_help,
+    render_rust_version, runtime_info, select_runtime, RuntimeSelection,
 };
+use hermes_cli::{profile_status, render_profile_status, resolve_rust_profile_context};
 use serde_json::json;
 use std::collections::VecDeque;
 
@@ -61,6 +62,16 @@ fn run_python(args: &[OsString]) -> i32 {
 }
 
 fn run_rust(args: &[OsString]) -> i32 {
+    let profile_context = match resolve_rust_profile_context(args) {
+        Ok(context) => context,
+        Err(message) => {
+            eprintln!("Error: {message}");
+            return 1;
+        }
+    };
+    env::set_var("HERMES_HOME", &profile_context.hermes_home);
+    let args = &profile_context.args;
+
     if is_rust_help_request(args) {
         print!("{}", render_rust_help());
         return 0;
@@ -73,6 +84,12 @@ fn run_rust(args: &[OsString]) -> i32 {
 
     if is_rust_agent_runtime_smoke_request(args) {
         return run_agent_runtime_smoke();
+    }
+
+    if is_rust_profile_status_request(args) {
+        let status = profile_status(&profile_context);
+        print!("{}", render_profile_status(&status));
+        return 0;
     }
 
     let command = args
