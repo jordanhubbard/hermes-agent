@@ -24,10 +24,10 @@ Tracks the migration of Hermes subsystems from Python to Rust. Source of truth: 
 
 | Status | Count | Share |
 | --- | ---: | ---: |
-| `planned` | 6 | 14% |
+| `planned` | 5 | 12% |
 | `in_progress` | 1 | 2% |
 | `ported` | 0 | 0% |
-| `tested` | 35 | 83% |
+| `tested` | 36 | 86% |
 | `production_wired` | 0 | 0% |
 | `default` | 0 | 0% |
 | `deferred` | 0 | 0% |
@@ -175,8 +175,8 @@ Convert scoped Rust parity into a Rust-primary production runtime and remove Pyt
 | | _Snapshot contracts must become production implementations with real session/state/tool/provider integration._ |  |  |  |  |
 | `hermes-fpr.8` | Preserve skills and plugin compatibility without in-repo Python | `planned` | `skills/`<br>`optional-skills/`<br>`plugins/`<br>`hermes_cli/plugins.py` | `Rust plugin/skill loader ABI and migration tooling` | `built-in/user/pip plugin and skill compatibility suite under Rust runtime` |
 | | _Decide whether Python plugins remain an external user extension mechanism, are sandboxed behind a stable IPC ABI, or are migrated; in-repo Python plugin dependencies cannot be required after source removal._ |  |  |  |  |
-| `hermes-fpr.9` | Run shadow Python-vs-Rust execution and divergence triage | `planned` | `tests/parity/`<br>`scripts/` | `shadow runtime harness` | `shadow diff suite for representative mutable and non-mutable workflows` |
-| | _Dual-run the same prompts, tool calls, state mutations, gateway events, and CLI commands through Python and Rust, classify divergences, and block default flips on unexplained behavior differences._ |  |  |  |  |
+| `hermes-fpr.9` | Run shadow Python-vs-Rust execution and divergence triage | `tested` | `tests/parity/`<br>`scripts/` | `scripts/rust_shadow_diff.py` | `tests/parity/test_shadow_diff.py` |
+| | _scripts/rust_shadow_diff.py dual-runs representative Python and Rust surfaces and fails on unexplained divergence. Current covered cases compare all golden agent replay fixtures for prompts/tool calls, CLI command registry and dispatch samples, gateway control-command routing, and a mutable session lifecycle through Python SessionDB vs the Rust state daemon. The harness reports divergence classifications and tests/parity/test_shadow_diff.py blocks CI on any unexplained difference. This does not make Rust default or deletion-safe; it is a shadow gate over the Rust-owned surfaces that exist so far._ |  |  |  |  |
 | `hermes-fpr.10` | Flip Rust to default and remove Python sources | `planned` | `run_agent.py`<br>`cli.py`<br>`model_tools.py`<br>`hermes_cli/`<br>`gateway/`<br>`tui_gateway/`<br>`acp_adapter/`<br>`tools/`<br>`plugins/` | `Rust default runtime and deletion commit` | `scripts/run_tests.sh equivalent with Rust default + cargo test --workspace + clean install smoke` |
 | | _This is a final gate, not an implementation bead. Python removal is allowed only after every previous fpr row is default or explicitly deferred with owner sign-off and rollback/release notes are complete._ |  |  |  |  |
 

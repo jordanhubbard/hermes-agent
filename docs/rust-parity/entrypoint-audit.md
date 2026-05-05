@@ -93,7 +93,7 @@ backend is reached through Python adapters.
 | `hermes-fpr.6` | CLI setup/auth/config/profile/log/skin/update/session workflows remain Python runtime code. |
 | `hermes-fpr.7` | TUI gateway, dashboard backend, ACP, cron, batch, MCP, and RL are contract-tested but Python-primary. |
 | `hermes-fpr.8` | Built-in plugins, memory providers, image providers, platform plugins, plugin CLI commands, and user/pip plugin compatibility depend on Python APIs. |
-| `hermes-fpr.9` | No shadow Python-vs-Rust harness yet runs representative mutable and non-mutable workflows through both runtimes. |
+| `hermes-fpr.9` | Shadow harness exists in `scripts/rust_shadow_diff.py` and is CI-gated by `tests/parity/test_shadow_diff.py`; remaining risk is expanding coverage as `hermes-fpr.4`-`.8` move from contracts to production Rust runtimes. |
 | `hermes-fpr.10` | Python source removal is blocked until every prior row is `default` or explicitly deferred with owner sign-off. |
 
 ## Coverage Checklist

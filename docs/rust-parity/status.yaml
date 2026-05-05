@@ -488,10 +488,10 @@ epics:
         python_paths:
           - tests/parity/
           - scripts/
-        rust_target: shadow runtime harness
-        status: planned
-        ci_gate: shadow diff suite for representative mutable and non-mutable workflows
-        notes: Dual-run the same prompts, tool calls, state mutations, gateway events, and CLI commands through Python and Rust, classify divergences, and block default flips on unexplained behavior differences.
+        rust_target: scripts/rust_shadow_diff.py
+        status: tested
+        ci_gate: tests/parity/test_shadow_diff.py
+        notes: scripts/rust_shadow_diff.py dual-runs representative Python and Rust surfaces and fails on unexplained divergence. Current covered cases compare all golden agent replay fixtures for prompts/tool calls, CLI command registry and dispatch samples, gateway control-command routing, and a mutable session lifecycle through Python SessionDB vs the Rust state daemon. The harness reports divergence classifications and tests/parity/test_shadow_diff.py blocks CI on any unexplained difference. This does not make Rust default or deletion-safe; it is a shadow gate over the Rust-owned surfaces that exist so far.
       - bead: hermes-fpr.10
         story: Flip Rust to default and remove Python sources
         python_paths:
