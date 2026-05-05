@@ -20,8 +20,15 @@ be removed.
 
 ## Audit Summary
 
-As of this audit, no installed user-facing Hermes command is Rust-primary.
-`pyproject.toml` still declares:
+As of `hermes-fpr.2`, installs and updates can expose a Rust-owned `hermes`
+launcher when Cargo is available. That launcher owns runtime selection through
+`HERMES_RUNTIME` and provides an explicit Python rollout fallback. This is not
+full runtime parity: the launcher still routes production chat, gateway, TUI,
+dashboard, ACP, tools, skills, and plugin workflows to Python unless a Rust-owned
+command is selected.
+
+`pyproject.toml` still declares Python console scripts for pip/editable-package
+fallback compatibility:
 
 - `hermes = "hermes_cli.main:main"`
 - `hermes-agent = "run_agent:main"`
@@ -42,7 +49,7 @@ backend is reached through Python adapters.
 
 | Surface | Python runtime entry | Current Rust ownership | Status | Blocking work | Required smoke/parity gate |
 | --- | --- | --- | --- | --- | --- |
-| Installed `hermes` command and top-level dispatch | `pyproject.toml`, `hermes_cli/main.py` | `crates/hermes-cli` owns command registry, selected setup/auth planning, display, and config contracts only. It does not own argparse dispatch or process startup. | `python-primary`, `deletion-blocker` | `hermes-fpr.2`, `hermes-fpr.6` | Clean install smoke for `hermes --help`, `hermes -q`, `hermes setup`, `hermes config`, `hermes profile`, `hermes logs`, `hermes skills`, and `hermes tools` under `HERMES_RUNTIME=rust` and explicit Python fallback. |
+| Installed `hermes` command and top-level dispatch | `pyproject.toml`, `hermes_cli/main.py`, `scripts/install.sh` | `crates/hermes-cli/src/bin/hermes.rs` owns the install/update launcher and `HERMES_RUNTIME` selector. `HERMES_RUNTIME=python` explicitly executes `python -m hermes_cli.main`; `HERMES_RUNTIME=rust` runs only Rust-owned launcher commands today. Python argparse dispatch remains the fallback for production workflows. | `runtime-selector-tested`, `python-primary workflow fallback`, `deletion-blocker` | `hermes-fpr.6`, `hermes-fpr.10` | Clean install/update smoke for launcher build/linking, `hermes --runtime-info`, `HERMES_RUNTIME=rust hermes version`, explicit Python fallback, and eventual Rust-owned `hermes -q`, setup, config, profile, logs, skills, and tools commands. |
 | Classic interactive and single-query chat CLI | `cli.py`, `HermesCLI`, `AIAgent` | Rust has registry/config/display contracts, but the interactive loop, prompt handling, credential checks, image preprocessing, worktree handling, signal handling, and `AIAgent` invocation remain Python. | `python-primary`, `deletion-blocker` | `hermes-fpr.3`, `hermes-fpr.6` | Rust default smoke for interactive startup, quiet `-q`, image input, resume, skills preload, worktree mode, credential failure, and interrupted tool execution. |
 | Direct `hermes-agent` command | `pyproject.toml`, `run_agent.py` | `crates/hermes-agent-core` owns domain types, canned conversation loop, provider wire helpers, compression planning, and fixture replay. It does not execute live provider HTTP or production tool dispatch. | `python-primary`, `deletion-blocker` | `hermes-fpr.3`, `hermes-fpr.4` | Mock-provider E2E covering streaming and non-streaming responses, tool calls, failures, budgets, interrupts, compression, persistence, and lifecycle hooks through the Rust runtime. |
 | Gateway command and service lifecycle | `hermes_cli/main.py`, `cli.py --gateway`, `gateway/run.py` | `crates/hermes-gateway` owns guard, slash-route, streaming/delivery, and adapter-trait contracts. It does not own `GatewayRunner`, platform startup, live delivery, approvals, restart/update, or token-lock lifecycle. | `python-primary`, `deletion-blocker` | `hermes-fpr.5` | Built-in platform smoke matrix for telegram, discord, slack, whatsapp, signal, matrix, mattermost, email, sms, homeassistant, dingtalk, wecom, weixin, feishu, qqbot, bluebubbles, webhook, api_server, and plugin platforms with Rust runtime. |
@@ -79,7 +86,7 @@ backend is reached through Python adapters.
 
 | Workstream | Deletion blocker |
 | --- | --- |
-| `hermes-fpr.2` | Installed commands and installer still select Python entry points. No Rust-owned `hermes` binary/runtime selector exists. |
+| `hermes-fpr.2` | Rust launcher/runtime selector exists and is tested. Remaining risk is broader packaging: pip/editable-package console scripts remain Python fallback until Rust packaging replaces them or they are intentionally retained as an explicit rollback path. |
 | `hermes-fpr.3` | Live agent execution remains Python: model HTTP, streaming, credentials, fallback, callbacks, budgets, interrupts, compression, persistence, and hooks are not Rust-primary. |
 | `hermes-fpr.4` | Most side-effect-heavy tools remain Python handlers. Only a low-risk file-handler slice is native Rust. |
 | `hermes-fpr.5` | Gateway runner and platform adapters remain Python despite tested Rust contracts. |
@@ -118,4 +125,3 @@ planning:
    persistence, interrupts, budgets, and compression.
 3. `hermes-fpr.4`: expand native Rust tool handlers or mark each remaining
    handler family as an explicit external boundary with tests and sign-off.
-

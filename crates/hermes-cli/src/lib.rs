@@ -3,6 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde::Serialize;
 
 pub mod display;
+pub mod launcher;
 pub mod setup;
 
 pub use display::{

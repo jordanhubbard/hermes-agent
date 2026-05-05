@@ -52,6 +52,7 @@ ROOT_FHS_LAYOUT=false
 USE_VENV=true
 RUN_SETUP=true
 BRANCH="main"
+RUST_HERMES_BIN=""
 
 # Detect non-interactive mode (e.g. curl | bash)
 # When stdin is not a terminal, read -p will fail with EOF,
@@ -1016,22 +1017,47 @@ install_deps() {
     log_success "All dependencies installed"
 }
 
+build_rust_launcher() {
+    RUST_HERMES_BIN=""
+
+    if ! command -v cargo >/dev/null 2>&1; then
+        log_warn "cargo not found; keeping Python hermes entry point as fallback"
+        log_info "Install Rust/Cargo and re-run install to enable the Rust launcher"
+        return 0
+    fi
+
+    log_info "Building Rust hermes launcher..."
+    if cargo build --release -p hermes-cli --bin hermes; then
+        RUST_HERMES_BIN="$INSTALL_DIR/target/release/hermes"
+        if [ -x "$RUST_HERMES_BIN" ]; then
+            log_success "Rust hermes launcher built"
+        else
+            log_warn "Rust build completed but launcher not found at $RUST_HERMES_BIN"
+            RUST_HERMES_BIN=""
+        fi
+    else
+        log_warn "Rust hermes launcher build failed; keeping Python fallback"
+        RUST_HERMES_BIN=""
+    fi
+}
+
 setup_path() {
     log_info "Setting up hermes command..."
 
+    local PYTHON_HERMES_BIN
     if [ "$USE_VENV" = true ]; then
-        HERMES_BIN="$INSTALL_DIR/venv/bin/hermes"
+        PYTHON_HERMES_BIN="$INSTALL_DIR/venv/bin/hermes"
     else
-        HERMES_BIN="$(which hermes 2>/dev/null || echo "")"
-        if [ -z "$HERMES_BIN" ]; then
+        PYTHON_HERMES_BIN="$(which hermes 2>/dev/null || echo "")"
+        if [ -z "$PYTHON_HERMES_BIN" ]; then
             log_warn "hermes not found on PATH after install"
             return 0
         fi
     fi
 
     # Verify the entry point script was actually generated
-    if [ ! -x "$HERMES_BIN" ]; then
-        log_warn "hermes entry point not found at $HERMES_BIN"
+    if [ ! -x "$PYTHON_HERMES_BIN" ]; then
+        log_warn "hermes entry point not found at $PYTHON_HERMES_BIN"
         log_info "This usually means the pip install didn't complete successfully."
         if [ "$DISTRO" = "termux" ]; then
             log_info "Try: cd $INSTALL_DIR && python -m pip install -e '.[termux]' -c constraints-termux.txt"
@@ -1039,6 +1065,21 @@ setup_path() {
             log_info "Try: cd $INSTALL_DIR && uv pip install -e '.[all]'"
         fi
         return 0
+    fi
+
+    if [ -z "$RUST_HERMES_BIN" ]; then
+        local built_launcher="$INSTALL_DIR/target/release/hermes"
+        if [ -x "$built_launcher" ]; then
+            RUST_HERMES_BIN="$built_launcher"
+        fi
+    fi
+
+    if [ -n "$RUST_HERMES_BIN" ] && [ -x "$RUST_HERMES_BIN" ]; then
+        HERMES_BIN="$RUST_HERMES_BIN"
+        log_info "Using Rust hermes launcher (Python fallback remains available via HERMES_RUNTIME=python)"
+    else
+        HERMES_BIN="$PYTHON_HERMES_BIN"
+        log_warn "Rust hermes launcher unavailable; linking Python hermes entry point"
     fi
 
     local command_link_dir
@@ -1554,6 +1595,7 @@ main() {
     clone_repo
     setup_venv
     install_deps
+    build_rust_launcher
     install_node_deps
     setup_path
     copy_config_templates

@@ -45,7 +45,7 @@ def test_entrypoint_audit_covers_required_surfaces() -> None:
     text = AUDIT_MD.read_text()
     assert "## Entry Point Inventory" in text
     assert "## Coverage Checklist" in text
-    assert "no installed user-facing Hermes command is Rust-primary" in text
+    assert "installs and updates can expose a Rust-owned `hermes`" in text
     assert 'hermes = "hermes_cli.main:main"' in text
     assert 'hermes-agent = "run_agent:main"' in text
     assert 'hermes-acp = "acp_adapter.entry:main"' in text
@@ -63,6 +63,12 @@ def test_full_parity_epic_tracks_python_removal_gate() -> None:
     assert rows[0]["bead"] == "hermes-fpr.1"
     assert rows[0]["status"] == "tested"
     assert "entrypoint-audit.md" in rows[0]["rust_target"]
+    assert rows[1]["bead"] == "hermes-fpr.2"
+    assert rows[1]["status"] == "tested"
+    assert "test_rust_launcher.py" in rows[1]["ci_gate"]
+    assert rows[2]["bead"] == "hermes-fpr.3"
+    assert rows[2]["status"] == "in_progress"
+    assert "provider_http.rs" in rows[2]["rust_target"]
     assert rows[-1]["bead"] == "hermes-fpr.10"
     assert "remove Python sources" in rows[-1]["story"]
     assert rows[-1]["status"] == "planned"

@@ -6630,6 +6630,91 @@ def _ensure_fhs_path_guard() -> None:
         print("    (reload your shell or run 'source ~/.bashrc' to pick it up)")
 
 
+def _build_rust_hermes_launcher() -> None:
+    """Build and relink the Rust-owned ``hermes`` launcher during update.
+
+    This mirrors ``scripts/install.sh``: update must not silently leave a
+    previously installed user-facing ``hermes`` symlink pointing at the Python
+    console script when the Rust launcher is available.
+    """
+    cargo = shutil.which("cargo")
+    if not cargo:
+        print("  ⚠ cargo not found; Rust hermes launcher not rebuilt")
+        return
+
+    print("→ Building Rust hermes launcher...")
+    try:
+        subprocess.run(
+            [cargo, "build", "--release", "-p", "hermes-cli", "--bin", "hermes"],
+            cwd=PROJECT_ROOT,
+            check=True,
+        )
+    except subprocess.CalledProcessError as exc:
+        print(f"  ⚠ Rust hermes launcher build failed (exit {exc.returncode})")
+        return
+
+    launcher_name = "hermes.exe" if os.name == "nt" else "hermes"
+    launcher = PROJECT_ROOT / "target" / "release" / launcher_name
+    if not launcher.is_file():
+        print(f"  ⚠ Rust hermes launcher missing after build: {launcher}")
+        return
+
+    print(f"  ✓ Rust hermes launcher built: {launcher}")
+    _relink_rust_hermes_launcher(launcher)
+
+
+def _relink_rust_hermes_launcher(launcher: Path) -> None:
+    """Point known user-facing ``hermes`` symlinks at the Rust launcher."""
+    candidates: list[Path] = []
+    path_bin = shutil.which("hermes")
+    if path_bin:
+        candidates.append(Path(path_bin))
+
+    if os.name != "nt":
+        candidates.extend(
+            [
+                Path.home() / ".local" / "bin" / "hermes",
+                Path("/usr/local/bin/hermes"),
+            ]
+        )
+
+    seen: set[Path] = set()
+    linked = False
+    for candidate in candidates:
+        try:
+            candidate = candidate.expanduser()
+            key = candidate.resolve(strict=False)
+        except OSError:
+            key = candidate
+        if key in seen:
+            continue
+        seen.add(key)
+
+        if not candidate.is_symlink():
+            continue
+        try:
+            resolved = candidate.resolve(strict=True)
+        except OSError:
+            resolved = None
+
+        if resolved is not None and resolved != launcher:
+            try:
+                resolved.relative_to(PROJECT_ROOT)
+            except ValueError:
+                continue
+
+        try:
+            candidate.unlink()
+            candidate.symlink_to(launcher)
+            print(f"  ✓ Symlinked {candidate} → {launcher}")
+            linked = True
+        except OSError as exc:
+            print(f"  ⚠ Could not relink {candidate}: {exc}")
+
+    if not linked:
+        print("  ℹ Rust launcher built; no existing user-facing hermes symlink was relinked")
+
+
 def _run_pre_update_backup(args) -> None:
     """Create a full zip backup of HERMES_HOME before running the update.
 
@@ -7029,6 +7114,7 @@ def _cmd_update_impl(args, gateway_mode: bool):
                 )
             _install_python_dependencies_with_optional_fallback(pip_cmd)
 
+        _build_rust_hermes_launcher()
         _update_node_dependencies()
         _build_web_ui(PROJECT_ROOT / "web")
 

@@ -413,20 +413,20 @@ epics:
           - hermes_cli/main.py
           - pyproject.toml
           - scripts/install.sh
-        rust_target: crates/hermes-cli + top-level hermes binary
-        status: planned
-        ci_gate: clean-install smoke with HERMES_RUNTIME=rust and HERMES_RUNTIME=python
-        notes: The Rust binary must own command dispatch and select Python only as an explicit fallback during rollout; install/update packaging must install the Rust path on all supported platforms.
+        rust_target: crates/hermes-cli/src/bin/hermes.rs + scripts/install.sh + hermes_cli/main.py update relink
+        status: tested
+        ci_gate: tests/parity/cli/test_rust_launcher.py
+        notes: Rust-owned launcher selects runtime via HERMES_RUNTIME, reports runtime info, runs Rust-native launcher commands, rejects unported Rust commands without importing Python, and executes explicit Python fallback through python -m hermes_cli.main. install.sh builds and links target/release/hermes when cargo is available; hermes update rebuilds and relinks existing Hermes-owned symlinks. Production workflow parity remains tracked by later fpr rows.
       - bead: hermes-fpr.3
         story: Make the Rust agent loop production-capable
         python_paths:
           - run_agent.py
           - agent/
           - model_tools.py
-        rust_target: crates/hermes-agent-core
-        status: planned
-        ci_gate: real provider/mock-server E2E plus parity fixtures under Rust default
-        notes: Add real HTTP clients, streaming, credential selection, fallback, interrupts, budgets, compression, tool dispatch integration, persistence, and lifecycle hooks instead of fixture-only replay.
+        rust_target: crates/hermes-agent-core/src/provider_http.rs
+        status: in_progress
+        ci_gate: cargo test -p hermes-agent-core --test provider_http
+        notes: Non-streaming provider HTTP execution now reuses provider_wire request/response parity and has a mock OpenAI-compatible E2E test for request URL, auth/header forwarding, body shape, parsed assistant response, usage, and 429 retry classification. Remaining blockers include streaming HTTP, credential selection/pools, fallback policy, interrupts, budgets in live loops, compression integration, real tool dispatch, persistence, and lifecycle hooks.
       - bead: hermes-fpr.4
         story: Port all tool handlers or gate explicit non-removable boundaries
         python_paths:

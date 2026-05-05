@@ -24,10 +24,10 @@ Tracks the migration of Hermes subsystems from Python to Rust. Source of truth: 
 
 | Status | Count | Share |
 | --- | ---: | ---: |
-| `planned` | 9 | 21% |
-| `in_progress` | 0 | 0% |
+| `planned` | 7 | 17% |
+| `in_progress` | 1 | 2% |
 | `ported` | 0 | 0% |
-| `tested` | 33 | 79% |
+| `tested` | 34 | 81% |
 | `production_wired` | 0 | 0% |
 | `default` | 0 | 0% |
 | `deferred` | 0 | 0% |
@@ -161,10 +161,10 @@ Convert scoped Rust parity into a Rust-primary production runtime and remove Pyt
 | --- | --- | --- | --- | --- | --- |
 | `hermes-fpr.1` | Audit every Python entry point against Rust-primary ownership | `tested` | `run_agent.py`<br>`cli.py`<br>`hermes_cli/main.py`<br>`gateway/run.py`<br>`tui_gateway/server.py`<br>`hermes_cli/web_server.py`<br>`acp_adapter/`<br>`cron/`<br>`batch_runner.py`<br>`mcp_serve.py`<br>`rl_cli.py`<br>`tools/`<br>`plugins/` | `docs/rust-parity/entrypoint-audit.md + docs/rust-parity/full-parity-plan.md + docs/rust-parity/status.yaml` | `tests/parity/test_full_parity_plan.py` |
 | | _Entry-point audit records that no installed user-facing Hermes command is Rust-primary yet. It maps CLI, agent, gateway, TUI, dashboard, ACP, cron, batch, MCP, tools, skills, plugins, state, and packaging surfaces to current Rust ownership, blockers, deletion risks, and required smoke tests._ |  |  |  |  |
-| `hermes-fpr.2` | Ship a Rust-owned hermes binary and runtime selector | `planned` | `hermes_cli/main.py`<br>`pyproject.toml`<br>`scripts/install.sh` | `crates/hermes-cli + top-level hermes binary` | `clean-install smoke with HERMES_RUNTIME=rust and HERMES_RUNTIME=python` |
-| | _The Rust binary must own command dispatch and select Python only as an explicit fallback during rollout; install/update packaging must install the Rust path on all supported platforms._ |  |  |  |  |
-| `hermes-fpr.3` | Make the Rust agent loop production-capable | `planned` | `run_agent.py`<br>`agent/`<br>`model_tools.py` | `crates/hermes-agent-core` | `real provider/mock-server E2E plus parity fixtures under Rust default` |
-| | _Add real HTTP clients, streaming, credential selection, fallback, interrupts, budgets, compression, tool dispatch integration, persistence, and lifecycle hooks instead of fixture-only replay._ |  |  |  |  |
+| `hermes-fpr.2` | Ship a Rust-owned hermes binary and runtime selector | `tested` | `hermes_cli/main.py`<br>`pyproject.toml`<br>`scripts/install.sh` | `crates/hermes-cli/src/bin/hermes.rs + scripts/install.sh + hermes_cli/main.py update relink` | `tests/parity/cli/test_rust_launcher.py` |
+| | _Rust-owned launcher selects runtime via HERMES_RUNTIME, reports runtime info, runs Rust-native launcher commands, rejects unported Rust commands without importing Python, and executes explicit Python fallback through python -m hermes_cli.main. install.sh builds and links target/release/hermes when cargo is available; hermes update rebuilds and relinks existing Hermes-owned symlinks. Production workflow parity remains tracked by later fpr rows._ |  |  |  |  |
+| `hermes-fpr.3` | Make the Rust agent loop production-capable | `in_progress` | `run_agent.py`<br>`agent/`<br>`model_tools.py` | `crates/hermes-agent-core/src/provider_http.rs` | `cargo test -p hermes-agent-core --test provider_http` |
+| | _Non-streaming provider HTTP execution now reuses provider_wire request/response parity and has a mock OpenAI-compatible E2E test for request URL, auth/header forwarding, body shape, parsed assistant response, usage, and 429 retry classification. Remaining blockers include streaming HTTP, credential selection/pools, fallback policy, interrupts, budgets in live loops, compression integration, real tool dispatch, persistence, and lifecycle hooks._ |  |  |  |  |
 | `hermes-fpr.4` | Port all tool handlers or gate explicit non-removable boundaries | `planned` | `tools/`<br>`model_tools.py`<br>`toolsets.py` | `crates/hermes-tools` | `all core tool E2E tests pass with Rust dispatch and Rust handlers` |
 | | _Terminal/process, browser/web, delegate/subagent, MCP, memory/todo, media, and environment backends must be Rust-owned or have a documented external boundary that survives Python source deletion._ |  |  |  |  |
 | `hermes-fpr.5` | Port gateway runner and production platform adapters | `planned` | `gateway/run.py`<br>`gateway/platforms/`<br>`gateway/session.py` | `crates/hermes-gateway` | `gateway smoke matrix for every built-in platform adapter with Rust runtime` |
