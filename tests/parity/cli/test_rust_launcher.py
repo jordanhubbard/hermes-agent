@@ -194,8 +194,50 @@ def test_rust_runtime_profile_use_matches_python(tmp_path: Path) -> None:
     assert (python_root / "active_profile").read_text() == "coder\n"
 
 
+def test_rust_runtime_gateway_status_matches_python_not_running(tmp_path: Path) -> None:
+    hermes_home = tmp_path / "hermes-home"
+    hermes_home.mkdir()
+
+    env = {"HERMES_HOME": str(hermes_home)}
+    rust = _run_launcher("gateway", "status", env={**env, "HERMES_RUNTIME": "rust"})
+    python = _run_python_cli("gateway", "status", env=env)
+
+    assert rust.returncode == 0, rust.stderr
+    assert python.returncode == 0, python.stderr
+    assert rust.stdout == python.stdout
+
+
+def test_rust_runtime_gateway_status_health_lines_match_python(tmp_path: Path) -> None:
+    hermes_home = tmp_path / "hermes-home"
+    hermes_home.mkdir()
+    (hermes_home / "gateway_state.json").write_text(
+        json.dumps(
+            {
+                "gateway_state": "startup_failed",
+                "exit_reason": "missing token",
+                "active_agents": 0,
+                "restart_requested": False,
+                "platforms": {
+                    "telegram": {
+                        "state": "fatal",
+                        "error_message": "bad credentials",
+                    }
+                },
+            }
+        )
+    )
+
+    env = {"HERMES_HOME": str(hermes_home)}
+    rust = _run_launcher("gateway", "status", env={**env, "HERMES_RUNTIME": "rust"})
+    python = _run_python_cli("gateway", "status", env=env)
+
+    assert rust.returncode == 0, rust.stderr
+    assert python.returncode == 0, python.stderr
+    assert rust.stdout == python.stdout
+
+
 def test_rust_runtime_rejects_unported_commands_without_python_import() -> None:
-    result = _run_launcher("gateway", "status", env={"HERMES_RUNTIME": "rust"})
+    result = _run_launcher("gateway", "run", env={"HERMES_RUNTIME": "rust"})
 
     assert result.returncode == 78
     assert "not Rust-owned yet" in result.stderr

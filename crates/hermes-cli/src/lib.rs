@@ -3,6 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde::Serialize;
 
 pub mod display;
+pub mod gateway_status;
 pub mod launcher;
 pub mod profile;
 pub mod setup;
@@ -10,6 +11,7 @@ pub mod setup;
 pub use display::{
     builtin_skin_surfaces, logging_plan, render_status, CliStatusInput, LoggingPlan, SkinSurface,
 };
+pub use gateway_status::{gateway_status, render_gateway_status, GatewayStatus};
 pub use profile::{
     list_profiles, profile_status, render_profile_list, render_profile_show, render_profile_status,
     resolve_rust_profile_context, set_active_profile, show_profile, ProfileInfo, ProfileStatus,
