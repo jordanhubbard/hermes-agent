@@ -266,6 +266,49 @@ def test_rust_runtime_config_paths_respect_profile_flag(tmp_path: Path) -> None:
     assert rust.stdout == python.stdout
 
 
+def test_rust_runtime_logs_list_matches_python(tmp_path: Path) -> None:
+    hermes_home = tmp_path / "hermes-home"
+    logs_dir = hermes_home / "logs"
+    logs_dir.mkdir(parents=True)
+    (logs_dir / "agent.log").write_text("agent line\n")
+    (logs_dir / "errors.log").write_text("")
+    (logs_dir / "gateway.log").write_text("gateway line\n")
+
+    env = {"HERMES_HOME": str(hermes_home)}
+    rust = _run_launcher("logs", "list", env={**env, "HERMES_RUNTIME": "rust"})
+    python = _run_python_cli("logs", "list", env=env)
+
+    assert rust.returncode == 0, rust.stderr
+    assert python.returncode == 0, python.stderr
+    assert rust.stdout == python.stdout
+
+
+def test_rust_runtime_logs_tail_filters_match_python(tmp_path: Path) -> None:
+    hermes_home = tmp_path / "hermes-home"
+    logs_dir = hermes_home / "logs"
+    logs_dir.mkdir(parents=True)
+    (logs_dir / "agent.log").write_text(
+        "\n".join(
+            [
+                "2026-05-05 10:00:00 INFO run_agent: hello abc",
+                "2026-05-05 10:00:01 WARNING tools.file: warn abc",
+                "2026-05-05 10:00:02 ERROR gateway.run: wrong component abc",
+                "2026-05-05 10:00:03 ERROR tools.memory: boom xyz",
+            ]
+        )
+        + "\n"
+    )
+
+    env = {"HERMES_HOME": str(hermes_home)}
+    args = ("logs", "--level", "WARNING", "--session", "abc", "--component", "tools", "-n", "5")
+    rust = _run_launcher(*args, env={**env, "HERMES_RUNTIME": "rust"})
+    python = _run_python_cli(*args, env=env)
+
+    assert rust.returncode == 0, rust.stderr
+    assert python.returncode == 0, python.stderr
+    assert rust.stdout == python.stdout
+
+
 def test_rust_runtime_rejects_unported_commands_without_python_import() -> None:
     result = _run_launcher("gateway", "run", env={"HERMES_RUNTIME": "rust"})
 

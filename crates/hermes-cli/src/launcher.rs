@@ -95,6 +95,10 @@ pub fn is_rust_config_path_request(args: &[OsString]) -> bool {
             .is_some_and(|arg| arg == OsStr::new("path") || arg == OsStr::new("env-path"))
 }
 
+pub fn is_rust_logs_request(args: &[OsString]) -> bool {
+    args.first().is_some_and(|arg| arg == OsStr::new("logs"))
+}
+
 pub fn is_rust_profile_status_request(args: &[OsString]) -> bool {
     args.len() == 1 && args.first().is_some_and(|arg| arg == OsStr::new("profile"))
 }
@@ -108,6 +112,7 @@ pub fn render_rust_help() -> &'static str {
 Usage:\n  hermes [--runtime-info]\n  HERMES_RUNTIME=python hermes [args...]\n  HERMES_RUNTIME=rust hermes version\n  HERMES_RUNTIME=rust hermes agent-runtime-smoke\n\
   HERMES_RUNTIME=rust hermes config path\n\
   HERMES_RUNTIME=rust hermes gateway status\n\
+  HERMES_RUNTIME=rust hermes logs [list|agent|errors|gateway]\n\
   HERMES_RUNTIME=rust hermes profile\n\n\
 Runtime selection:\n  HERMES_RUNTIME=python  Run the production Python runtime through hermes_cli.main\n  HERMES_RUNTIME=rust    Run Rust-owned commands that have landed so far\n  HERMES_RUNTIME=auto    Use the rollout default\n\n\
 The Rust launcher owns process selection. Full Rust chat, gateway, TUI, dashboard,\n\
@@ -216,6 +221,7 @@ mod tests {
             OsString::from("config"),
             OsString::from("env-path")
         ]));
+        assert!(is_rust_logs_request(&[OsString::from("logs")]));
         assert!(is_rust_profile_status_request(&[OsString::from("profile")]));
         assert!(is_rust_profile_request(&[
             OsString::from("profile"),
