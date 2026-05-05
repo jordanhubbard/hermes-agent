@@ -17,7 +17,7 @@ Full parity is reached only when all of the following are true:
 - The `hermes` command can run every supported user workflow through Rust
   without importing in-repo Python.
 - Existing `~/.hermes` profiles, config, auth state, session DBs, skills, and
-  plugin manifests remain readable without a destructive migration.
+  supported plugin manifests remain readable without a destructive migration.
 - CLI, gateway, TUI backend, dashboard, ACP, cron, batch, tools, providers,
   state, skills, and plugin surfaces are Rust-primary in CI and shipped builds.
 - A Python-oracle parity suite still exists until removal and compares real
@@ -43,8 +43,10 @@ The `hermes-fpr` epic in `status.yaml` is the source of truth. The rows are:
 - Port CLI setup/auth/model/config/update/profile/log/skin surfaces.
 - Port TUI gateway, dashboard backend, ACP, cron, batch, MCP, RL, and plugin
   adjacent runtime surfaces.
-- Preserve skills and plugin compatibility or define a stable Rust plugin ABI
-  with migration tooling.
+- Preserve skills, port or defer repo-shipped plugin/provider surfaces, and
+  document plugin migration policy. Python plugin ABI compatibility is required
+  only for an existing explicit RPC/IPC contract; external Python plugins can
+  be converted to Rust on demand.
 - Run shadow Python-vs-Rust execution and diffing for representative flows.
 - Flip Rust to default and complete the Python removal gate.
 
@@ -83,3 +85,5 @@ The final Python deletion is blocked until:
   parity.
 - Shipping a Rust facade that shells out to in-repo Python as the final
   architecture.
+- Treating external user/pip Python plugin ABI compatibility as a hard cutover
+  blocker when no RPC/IPC contract exists.

@@ -105,6 +105,18 @@ pub fn is_rust_logs_request(args: &[OsString]) -> bool {
     args.first().is_some_and(|arg| arg == OsStr::new("logs"))
 }
 
+pub fn is_rust_plugins_request(args: &[OsString]) -> bool {
+    args.first().is_some_and(|arg| arg == OsStr::new("plugins"))
+        && matches!(
+            args.get(1).map(OsString::as_os_str),
+            Some(action)
+                if action == OsStr::new("list")
+                    || action == OsStr::new("ls")
+                    || action == OsStr::new("enable")
+                    || action == OsStr::new("disable")
+        )
+}
+
 pub fn is_rust_profile_status_request(args: &[OsString]) -> bool {
     args.len() == 1 && args.first().is_some_and(|arg| arg == OsStr::new("profile"))
 }
@@ -120,6 +132,7 @@ Usage:\n  hermes [--runtime-info]\n  HERMES_RUNTIME=python hermes [args...]\n  H
   HERMES_RUNTIME=rust hermes cron status\n\
   HERMES_RUNTIME=rust hermes gateway status\n\
   HERMES_RUNTIME=rust hermes logs [list|agent|errors|gateway]\n\
+  HERMES_RUNTIME=rust hermes plugins [list|enable|disable]\n\
   HERMES_RUNTIME=rust hermes profile\n\n\
 Runtime selection:\n  HERMES_RUNTIME=python  Run the production Python runtime through hermes_cli.main\n  HERMES_RUNTIME=rust    Run Rust-owned commands that have landed so far\n  HERMES_RUNTIME=auto    Use the rollout default\n\n\
 The Rust launcher owns process selection. Full Rust chat, gateway, TUI, dashboard,\n\
@@ -233,6 +246,15 @@ mod tests {
             OsString::from("status")
         ]));
         assert!(is_rust_logs_request(&[OsString::from("logs")]));
+        assert!(is_rust_plugins_request(&[
+            OsString::from("plugins"),
+            OsString::from("list")
+        ]));
+        assert!(is_rust_plugins_request(&[
+            OsString::from("plugins"),
+            OsString::from("enable"),
+            OsString::from("disk-cleanup")
+        ]));
         assert!(is_rust_profile_status_request(&[OsString::from("profile")]));
         assert!(is_rust_profile_request(&[
             OsString::from("profile"),

@@ -11,6 +11,7 @@ import sys
 from pathlib import Path
 
 import pytest
+import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 RUST_CLI_CRATE = REPO_ROOT / "crates" / "hermes-cli"
@@ -63,6 +64,10 @@ def _write_skill(profile_home: Path, name: str) -> None:
     skill_dir = profile_home / "skills" / "custom" / name
     skill_dir.mkdir(parents=True)
     (skill_dir / "SKILL.md").write_text(f"---\nname: {name}\n---\n")
+
+
+def _load_yaml(path: Path) -> dict:
+    return yaml.safe_load(path.read_text()) or {}
 
 
 def test_runtime_info_reports_default_python_rollout_path() -> None:
@@ -357,6 +362,92 @@ def test_rust_runtime_cron_status_matches_python_active_jobs(tmp_path: Path) -> 
     assert rust.returncode == 0, rust.stderr
     assert python.returncode == 0, python.stderr
     assert rust.stdout == python.stdout
+
+
+def test_rust_runtime_plugins_list_matches_python(tmp_path: Path) -> None:
+    hermes_home = tmp_path / "hermes-home"
+    bundled = tmp_path / "bundled-plugins"
+    user_plugins = hermes_home / "plugins" / "user-one"
+    bundled_one = bundled / "bundled-one"
+    user_plugins.mkdir(parents=True)
+    bundled_one.mkdir(parents=True)
+    (bundled_one / "plugin.yaml").write_text(
+        "name: bundled-one\nversion: 0.1\ndescription: Bundled one\n"
+    )
+    (user_plugins / "plugin.yaml").write_text(
+        "name: user-one\nversion: 1.2\ndescription: User one\n"
+    )
+    (hermes_home / "config.yaml").write_text(
+        "plugins:\n  enabled:\n    - user-one\n  disabled:\n    - bundled-one\n"
+    )
+
+    env = {
+        "HERMES_HOME": str(hermes_home),
+        "HERMES_BUNDLED_PLUGINS": str(bundled),
+    }
+    rust = _run_launcher("plugins", "list", env={**env, "HERMES_RUNTIME": "rust"})
+    python = _run_python_cli("plugins", "list", env=env)
+
+    assert rust.returncode == 0, rust.stderr
+    assert python.returncode == 0, python.stderr
+    assert rust.stdout == python.stdout
+
+
+def test_rust_runtime_plugins_enable_disable_match_python(tmp_path: Path) -> None:
+    bundled = tmp_path / "bundled-plugins"
+    (bundled / "bundled-one").mkdir(parents=True)
+    (bundled / "bundled-one" / "plugin.yaml").write_text(
+        "name: bundled-one\nversion: 0.1\ndescription: Bundled one\n"
+    )
+    rust_home = tmp_path / "rust-home"
+    python_home = tmp_path / "python-home"
+    rust_home.mkdir()
+    python_home.mkdir()
+
+    rust_env = {
+        "HERMES_HOME": str(rust_home),
+        "HERMES_BUNDLED_PLUGINS": str(bundled),
+        "HERMES_RUNTIME": "rust",
+    }
+    python_env = {
+        "HERMES_HOME": str(python_home),
+        "HERMES_BUNDLED_PLUGINS": str(bundled),
+    }
+
+    rust_enable = _run_launcher("plugins", "enable", "bundled-one", env=rust_env)
+    python_enable = _run_python_cli("plugins", "enable", "bundled-one", env=python_env)
+    assert rust_enable.returncode == 0, rust_enable.stderr
+    assert python_enable.returncode == 0, python_enable.stderr
+    assert rust_enable.stdout == python_enable.stdout
+
+    rust_disable = _run_launcher("plugins", "disable", "bundled-one", env=rust_env)
+    python_disable = _run_python_cli("plugins", "disable", "bundled-one", env=python_env)
+    assert rust_disable.returncode == 0, rust_disable.stderr
+    assert python_disable.returncode == 0, python_disable.stderr
+    assert rust_disable.stdout == python_disable.stdout
+
+    rust_cfg = _load_yaml(rust_home / "config.yaml")
+    python_cfg = _load_yaml(python_home / "config.yaml")
+    assert rust_cfg["plugins"] == python_cfg["plugins"]
+
+
+def test_rust_runtime_plugins_missing_matches_python(tmp_path: Path) -> None:
+    hermes_home = tmp_path / "hermes-home"
+    bundled = tmp_path / "bundled-plugins"
+    hermes_home.mkdir()
+
+    env = {
+        "HERMES_HOME": str(hermes_home),
+        "HERMES_BUNDLED_PLUGINS": str(bundled),
+    }
+    rust = _run_launcher(
+        "plugins", "enable", "missing-plugin", env={**env, "HERMES_RUNTIME": "rust"}
+    )
+    python = _run_python_cli("plugins", "enable", "missing-plugin", env=env)
+
+    assert rust.returncode == python.returncode == 1
+    assert rust.stdout == python.stdout
+    assert rust.stderr == python.stderr == ""
 
 
 def test_rust_runtime_rejects_unported_commands_without_python_import() -> None:
