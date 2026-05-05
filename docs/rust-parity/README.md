@@ -24,8 +24,8 @@ Tracks the migration of Hermes subsystems from Python to Rust. Source of truth: 
 
 | Status | Count | Share |
 | --- | ---: | ---: |
-| `planned` | 3 | 7% |
-| `in_progress` | 3 | 7% |
+| `planned` | 2 | 5% |
+| `in_progress` | 4 | 10% |
 | `ported` | 0 | 0% |
 | `tested` | 36 | 86% |
 | `production_wired` | 0 | 0% |
@@ -171,8 +171,8 @@ Convert scoped Rust parity into a Rust-primary production runtime and remove Pyt
 | | _Started production gateway CLI cutover with Rust-owned `hermes gateway status` for the no-service/manual status path, including not-running output and recent runtime health lines from gateway_state.json matched against Python. Remaining gateway lifecycle, run/start/stop/restart/install/uninstall/setup flows, systemd/launchd/Termux/WSL branches, process scanning/token locks, session guards, approvals, background notifications, slash commands, delivery, restart/update behavior, and platform adapter smokes remain Python-owned._ |  |  |  |  |
 | `hermes-fpr.6` | Port CLI setup/auth/model/config/update/profile/log/skin surfaces | `in_progress` | `cli.py`<br>`hermes_cli/`<br>`hermes_constants.py`<br>`hermes_logging.py` | `crates/hermes-cli + crates/hermes-config` | `CLI smoke suite from clean temp HOME and migrated profile fixtures` |
 | | _Started the production CLI cutover with Rust launcher-side -p/--profile resolution for Rust-owned commands plus native `hermes profile`, `hermes profile list`, `hermes profile show`, `hermes profile use`, `hermes config path`, `hermes config env-path`, and bounded `hermes logs` list/tail behavior matching Python for clean default/named profile homes, display paths, config model/provider rendering, skill counts, .env/SOUL status, table rendering, sticky active-profile writes, config/.env path reporting, log listing, non-follow tailing, and level/session/component log filters when no gateway is running. Remaining setup wizard, auth, provider/model selection, config show/edit/set/check/migrate, profile create/delete/alias/rename/export/import, live gateway-running detection in profile output, logs follow/since mode, update flow, skins/display mutation, skills commands, and interactive/TUI behavior remain Python-owned._ |  |  |  |  |
-| `hermes-fpr.7` | Port integration runtimes around the primary agent | `planned` | `tui_gateway/`<br>`hermes_cli/web_server.py`<br>`acp_adapter/`<br>`cron/`<br>`batch_runner.py`<br>`mcp_serve.py`<br>`rl_cli.py` | `crates/hermes-tui-gateway + crates/hermes-dashboard + crates/hermes-acp + crates/hermes-integrations` | `TUI/dashboard/ACP/cron/batch/MCP/RL E2E tests with Rust runtime` |
-| | _Snapshot contracts must become production implementations with real session/state/tool/provider integration._ |  |  |  |  |
+| `hermes-fpr.7` | Port integration runtimes around the primary agent | `in_progress` | `tui_gateway/`<br>`hermes_cli/web_server.py`<br>`acp_adapter/`<br>`cron/`<br>`batch_runner.py`<br>`mcp_serve.py`<br>`rl_cli.py` | `crates/hermes-tui-gateway + crates/hermes-dashboard + crates/hermes-acp + crates/hermes-integrations` | `TUI/dashboard/ACP/cron/batch/MCP/RL E2E tests with Rust runtime` |
+| | _Started production integration cutover with Rust-owned `hermes cron status`, matching Python for no-gateway status, active-job counting, disabled-job exclusion, and next-run display from cron/jobs.json. Remaining TUI gateway, dashboard backend, ACP, cron tick/scheduler execution, batch, MCP, RL, real session/state/tool/provider integration, and delivery runtimes remain Python-owned._ |  |  |  |  |
 | `hermes-fpr.8` | Preserve skills and plugin compatibility without in-repo Python | `planned` | `skills/`<br>`optional-skills/`<br>`plugins/`<br>`hermes_cli/plugins.py` | `Rust plugin/skill loader ABI and migration tooling` | `built-in/user/pip plugin and skill compatibility suite under Rust runtime` |
 | | _Decide whether Python plugins remain an external user extension mechanism, are sandboxed behind a stable IPC ABI, or are migrated; in-repo Python plugin dependencies cannot be required after source removal._ |  |  |  |  |
 | `hermes-fpr.9` | Run shadow Python-vs-Rust execution and divergence triage | `tested` | `tests/parity/`<br>`scripts/` | `scripts/rust_shadow_diff.py` | `tests/parity/test_shadow_diff.py` |

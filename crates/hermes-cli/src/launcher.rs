@@ -95,6 +95,12 @@ pub fn is_rust_config_path_request(args: &[OsString]) -> bool {
             .is_some_and(|arg| arg == OsStr::new("path") || arg == OsStr::new("env-path"))
 }
 
+pub fn is_rust_cron_status_request(args: &[OsString]) -> bool {
+    args.len() == 2
+        && args.first().is_some_and(|arg| arg == OsStr::new("cron"))
+        && args.get(1).is_some_and(|arg| arg == OsStr::new("status"))
+}
+
 pub fn is_rust_logs_request(args: &[OsString]) -> bool {
     args.first().is_some_and(|arg| arg == OsStr::new("logs"))
 }
@@ -111,6 +117,7 @@ pub fn render_rust_help() -> &'static str {
     "Hermes Agent Rust launcher\n\n\
 Usage:\n  hermes [--runtime-info]\n  HERMES_RUNTIME=python hermes [args...]\n  HERMES_RUNTIME=rust hermes version\n  HERMES_RUNTIME=rust hermes agent-runtime-smoke\n\
   HERMES_RUNTIME=rust hermes config path\n\
+  HERMES_RUNTIME=rust hermes cron status\n\
   HERMES_RUNTIME=rust hermes gateway status\n\
   HERMES_RUNTIME=rust hermes logs [list|agent|errors|gateway]\n\
   HERMES_RUNTIME=rust hermes profile\n\n\
@@ -220,6 +227,10 @@ mod tests {
         assert!(is_rust_config_path_request(&[
             OsString::from("config"),
             OsString::from("env-path")
+        ]));
+        assert!(is_rust_cron_status_request(&[
+            OsString::from("cron"),
+            OsString::from("status")
         ]));
         assert!(is_rust_logs_request(&[OsString::from("logs")]));
         assert!(is_rust_profile_status_request(&[OsString::from("profile")]));

@@ -469,9 +469,9 @@ epics:
           - mcp_serve.py
           - rl_cli.py
         rust_target: crates/hermes-tui-gateway + crates/hermes-dashboard + crates/hermes-acp + crates/hermes-integrations
-        status: planned
+        status: in_progress
         ci_gate: TUI/dashboard/ACP/cron/batch/MCP/RL E2E tests with Rust runtime
-        notes: Snapshot contracts must become production implementations with real session/state/tool/provider integration.
+        notes: Started production integration cutover with Rust-owned `hermes cron status`, matching Python for no-gateway status, active-job counting, disabled-job exclusion, and next-run display from cron/jobs.json. Remaining TUI gateway, dashboard backend, ACP, cron tick/scheduler execution, batch, MCP, RL, real session/state/tool/provider integration, and delivery runtimes remain Python-owned.
       - bead: hermes-fpr.8
         story: Preserve skills and plugin compatibility without in-repo Python
         python_paths:
