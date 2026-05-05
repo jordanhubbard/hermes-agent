@@ -23,9 +23,9 @@ Tracks the migration of Hermes subsystems from Python to Rust. Source of truth: 
 | Status | Count | Share |
 | --- | ---: | ---: |
 | `planned` | 22 | 69% |
-| `in_progress` | 4 | 12% |
+| `in_progress` | 3 | 9% |
 | `ported` | 0 | 0% |
-| `tested` | 6 | 19% |
+| `tested` | 7 | 22% |
 | `production_wired` | 0 | 0% |
 | `default` | 0 | 0% |
 | `deferred` | 0 | 0% |
@@ -37,8 +37,8 @@ Port AIAgent and the synchronous conversation/tool-call loop to Rust.
 
 | Bead | Story | Status | Python | Rust target | CI gate |
 | --- | --- | --- | --- | --- | --- |
-| `hermes-1oa.1` | Define Rust agent-core domain model | `in_progress` | `run_agent.py`<br>`agent/model_metadata.py`<br>`agent/credential_pool.py` | `crates/hermes-agent-core` | `cargo test -p hermes-agent-core (workspace job)` |
-| | _Initial scaffolding — Message/Role/AssistantTurn/ToolTurn, ToolCall, ToolResult, ToolDefinition, ToolFunction. Round-trips parity-fixture JSON. Pending against full acceptance criteria, expanded in subsequent ticks - budget/token state, compression metadata, provider routing inputs, interrupt and conversation outcome types._ |  |  |  |  |
+| `hermes-1oa.1` | Define Rust agent-core domain model | `tested` | `run_agent.py`<br>`agent/model_metadata.py`<br>`agent/credential_pool.py`<br>`agent/context_compressor.py`<br>`hermes_cli/runtime_provider.py` | `crates/hermes-agent-core` | `cargo test -p hermes-agent-core (rust CI job)` |
+| | _All acceptance categories present. Modules - message, tool, budget, compression, provider, outcome. Types - Role, Message, AssistantTurn, ToolTurn, ToolCall, ToolResult, ToolDefinition, ToolFunction, TokenUsage, TurnCost, ConversationBudget, CompressionEvent, CompressionTrigger, LineageTip, ApiMode, ProviderRouting, InterruptKind, ConversationOutcome, ConversationResult. 28 cargo tests cover serde round-trip and shape contracts (assistant null content preserved, default omits empty fields, externally-tagged outcome variants, saturating add on token usage, budget exhaustion semantics)._ |  |  |  |  |
 | `hermes-1oa.2` | Port the AIAgent conversation loop | `planned` | `run_agent.py` | `crates/hermes-agent-core (planned)` | `tests/parity/agent_core/test_loop.py` |
 | | _Synchronous tool-call iteration and budget accounting._ |  |  |  |  |
 | `hermes-1oa.3` | Port compression and resume boundary behavior | `planned` | `agent/context_compressor.py`<br>`run_agent.py`<br>`hermes_state.py` | `crates/hermes-agent-core (planned)` | `tests/parity/agent_core/test_compression.py` |

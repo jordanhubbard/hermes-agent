@@ -45,10 +45,12 @@ epics:
           - run_agent.py
           - agent/model_metadata.py
           - agent/credential_pool.py
+          - agent/context_compressor.py
+          - hermes_cli/runtime_provider.py
         rust_target: crates/hermes-agent-core
-        status: in_progress
-        ci_gate: cargo test -p hermes-agent-core (workspace job)
-        notes: Initial scaffolding — Message/Role/AssistantTurn/ToolTurn, ToolCall, ToolResult, ToolDefinition, ToolFunction. Round-trips parity-fixture JSON. Pending against full acceptance criteria, expanded in subsequent ticks - budget/token state, compression metadata, provider routing inputs, interrupt and conversation outcome types.
+        status: tested
+        ci_gate: cargo test -p hermes-agent-core (rust CI job)
+        notes: All acceptance categories present. Modules - message, tool, budget, compression, provider, outcome. Types - Role, Message, AssistantTurn, ToolTurn, ToolCall, ToolResult, ToolDefinition, ToolFunction, TokenUsage, TurnCost, ConversationBudget, CompressionEvent, CompressionTrigger, LineageTip, ApiMode, ProviderRouting, InterruptKind, ConversationOutcome, ConversationResult. 28 cargo tests cover serde round-trip and shape contracts (assistant null content preserved, default omits empty fields, externally-tagged outcome variants, saturating add on token usage, budget exhaustion semantics).
       - bead: hermes-1oa.2
         story: Port the AIAgent conversation loop
         python_paths:

@@ -11,14 +11,10 @@
 //! in-repo Python code, must not be built as a Python extension, and
 //! must not embed CPython.
 //!
-//! Scope of this initial scaffolding:
+//! Scope:
 //!   * Messages (system/user/assistant/tool).
-//!   * Tool calls and tool results.
-//!   * Tool definitions (OpenAI-style function tools).
+//!   * Tool calls, results, definitions.
 //!   * Reasoning field on assistant turns.
-//!
-//! Out of scope here, intentionally — these arrive in subsequent ticks
-//! against the same bead:
 //!   * Budget / token accounting state.
 //!   * Compression metadata and lineage.
 //!   * Provider routing inputs.
@@ -27,8 +23,16 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+pub mod budget;
+pub mod compression;
 pub mod message;
+pub mod outcome;
+pub mod provider;
 pub mod tool;
 
+pub use budget::{ConversationBudget, TokenUsage, TurnCost};
+pub use compression::{CompressionEvent, CompressionTrigger, LineageTip};
 pub use message::{AssistantTurn, Message, Role, ToolTurn};
+pub use outcome::{ConversationOutcome, ConversationResult, InterruptKind};
+pub use provider::{ApiMode, ProviderRouting};
 pub use tool::{ToolCall, ToolDefinition, ToolFunction, ToolResult};
