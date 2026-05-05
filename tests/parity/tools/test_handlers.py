@@ -247,6 +247,7 @@ def test_all_core_tools_are_native_or_explicit_boundaries() -> None:
     assert "memory" in snapshot["native_tools"]
     assert "read_file" in snapshot["native_tools"]
     assert "session_search" in snapshot["native_tools"]
+    assert "skill_manage" in snapshot["native_tools"]
     assert "skills_list" in snapshot["native_tools"]
     assert "skill_view" in snapshot["native_tools"]
     assert "ha_list_entities" in snapshot["native_tools"]
@@ -254,7 +255,6 @@ def test_all_core_tools_are_native_or_explicit_boundaries() -> None:
     assert "ha_list_services" in snapshot["native_tools"]
     assert "ha_call_service" in snapshot["native_tools"]
     assert "execute_code" in snapshot["boundary_tools"]
-    assert "skill_manage" in snapshot["boundary_tools"]
     assert "cronjob" in snapshot["boundary_tools"]
     assert "send_message" in snapshot["boundary_tools"]
     assert "kanban_create" in snapshot["boundary_tools"]
@@ -527,6 +527,99 @@ def _python_skill_handler_snapshot(root: Path, monkeypatch: pytest.MonkeyPatch) 
     snapshot["skill_view_not_found"] = json.loads(
         skills_tool.skill_view("missing-skill", preprocess=False)
     )
+    snapshot.update(_python_skill_manage_snapshot(root, monkeypatch))
+    return snapshot
+
+
+MANAGED_SKILL_CONTENT = (
+    "---\n"
+    "name: managed\n"
+    "description: Managed skill\n"
+    "---\n"
+    "# Managed\n\n"
+    "Step 1: Do managed work.\n"
+)
+
+
+def _python_skill_manage_snapshot(root: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
+    import agent.skill_utils as skill_utils
+    import tools.skill_manager_tool as skill_manager
+
+    manage_dir = root / "managed-skills"
+    shutil.rmtree(manage_dir, ignore_errors=True)
+    manage_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(skill_manager, "SKILLS_DIR", manage_dir)
+    monkeypatch.setattr(skill_utils, "get_all_skills_dirs", lambda: [manage_dir])
+    monkeypatch.setattr(skill_manager, "_security_scan_skill", lambda _skill_dir: None)
+
+    snapshot = {}
+    snapshot["skill_manage_unknown_action"] = json.loads(
+        skill_manager.skill_manage(action="explode", name="managed")
+    )
+    snapshot["skill_manage_create_without_content"] = json.loads(
+        skill_manager.skill_manage(action="create", name="managed")
+    )
+    snapshot["skill_manage_create"] = json.loads(
+        skill_manager.skill_manage(
+            action="create",
+            name="managed",
+            content=MANAGED_SKILL_CONTENT,
+            category="devops",
+        )
+    )
+    snapshot["skill_manage_duplicate"] = json.loads(
+        skill_manager.skill_manage(
+            action="create",
+            name="managed",
+            content=MANAGED_SKILL_CONTENT,
+        )
+    )
+    snapshot["skill_manage_write_file"] = json.loads(
+        skill_manager.skill_manage(
+            action="write_file",
+            name="managed",
+            file_path="references/api.md",
+            file_content="old endpoint\n",
+        )
+    )
+    snapshot["skill_manage_write_traversal"] = json.loads(
+        skill_manager.skill_manage(
+            action="write_file",
+            name="managed",
+            file_path="references/../../escape.md",
+            file_content="escape",
+        )
+    )
+    snapshot["skill_manage_patch_file"] = json.loads(
+        skill_manager.skill_manage(
+            action="patch",
+            name="managed",
+            file_path="references/api.md",
+            old_string="old endpoint",
+            new_string="new endpoint",
+        )
+    )
+    snapshot["skill_manage_remove_missing_file"] = json.loads(
+        skill_manager.skill_manage(
+            action="remove_file",
+            name="managed",
+            file_path="references/missing.md",
+        )
+    )
+    snapshot["skill_manage_absorbed_missing"] = json.loads(
+        skill_manager.skill_manage(
+            action="delete",
+            name="managed",
+            absorbed_into="ghost",
+        )
+    )
+    snapshot["skill_manage_delete"] = json.loads(
+        skill_manager.skill_manage(
+            action="delete",
+            name="managed",
+            absorbed_into="",
+        )
+    )
     return snapshot
 
 
@@ -732,11 +825,11 @@ def _documented_python_boundaries() -> list[dict[str, Any]]:
         {
             "family": "skills",
             "boundary": "python_runtime_boundary",
-            "tools": ["skill_manage"],
+            "tools": [],
             "parity_gate": "tests/parity/tools/test_handlers.py::test_all_core_tools_are_native_or_explicit_boundaries",
             "deletion_blocker": True,
-            "deletion_plan": "Port skill creation/update/delete, optional-skill install/update/audit, plugin skills, provenance, setup prompts, and prompt-cache-aware slash injection to Rust or a stable external skill service.",
-            "reason": "Read-only local skill list/view behavior is native Rust; mutation, optional-skill hub operations, plugin skills, provenance, setup prompts, and slash injection remain Python-owned.",
+            "deletion_plan": "Move plugin skills, optional-skill install/update/audit, provenance telemetry, setup prompts, and prompt-cache-aware slash injection into Rust CLI/plugin runtimes or stable external skill services.",
+            "reason": "Local skills_list/skill_view and skill_manage mutation semantics are native Rust; plugin skills, optional hub operations, provenance telemetry, setup prompts, and slash injection remain broader CLI/plugin/runtime concerns.",
         },
         {
             "family": "clarify",

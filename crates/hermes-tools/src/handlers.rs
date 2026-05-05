@@ -15,6 +15,7 @@ use crate::memory::{memory_response, MemoryStore};
 use crate::session_search::{
     session_search_response, ConversationMessage, SearchMatch, SessionRecord, SessionSearchStore,
 };
+use crate::skill_manage::{skill_manage, SkillManageRequest};
 use crate::skills::{skill_view, skills_list};
 use crate::todo::{todo_response, TodoStore};
 
@@ -90,6 +91,7 @@ pub fn handler_parity_snapshot(root: &Path) -> io::Result<HandlerParitySnapshot>
         "read_file".to_string(),
         "search_files".to_string(),
         "session_search".to_string(),
+        "skill_manage".to_string(),
         "skill_view".to_string(),
         "skills_list".to_string(),
         "todo".to_string(),
@@ -401,11 +403,11 @@ fn documented_python_boundaries() -> Vec<ToolHandlerBoundary> {
         ToolHandlerBoundary {
             family: "skills".to_string(),
             boundary: "python_runtime_boundary".to_string(),
-            tools: vec!["skill_manage".to_string()],
+            tools: Vec::new(),
             parity_gate: "tests/parity/tools/test_handlers.py::test_all_core_tools_are_native_or_explicit_boundaries".to_string(),
             deletion_blocker: true,
-            deletion_plan: "Port skill creation/update/delete, optional-skill install/update/audit, plugin skills, provenance, setup prompts, and prompt-cache-aware slash injection to Rust or a stable external skill service.".to_string(),
-            reason: "Read-only local skill list/view behavior is native Rust; mutation, optional-skill hub operations, plugin skills, provenance, setup prompts, and slash injection remain Python-owned.".to_string(),
+            deletion_plan: "Move plugin skills, optional-skill install/update/audit, provenance telemetry, setup prompts, and prompt-cache-aware slash injection into Rust CLI/plugin runtimes or stable external skill services.".to_string(),
+            reason: "Local skills_list/skill_view and skill_manage mutation semantics are native Rust; plugin skills, optional hub operations, provenance telemetry, setup prompts, and slash injection remain broader CLI/plugin/runtime concerns.".to_string(),
         },
         ToolHandlerBoundary {
             family: "clarify".to_string(),
@@ -799,7 +801,143 @@ fn native_skill_handler_snapshot(root: &Path) -> io::Result<BTreeMap<String, Val
         "skill_view_not_found".to_string(),
         skill_view(&skills_dir, "missing-skill", None)?,
     );
+    let manage_dir = root.join("managed-skills");
+    prepare_skill_manage_fixture(&manage_dir)?;
+    snapshot.insert(
+        "skill_manage_unknown_action".to_string(),
+        skill_manage(
+            &manage_dir,
+            SkillManageRequest {
+                action: "explode",
+                name: "managed",
+                ..SkillManageRequest::default()
+            },
+        )?,
+    );
+    snapshot.insert(
+        "skill_manage_create_without_content".to_string(),
+        skill_manage(
+            &manage_dir,
+            SkillManageRequest {
+                action: "create",
+                name: "managed",
+                ..SkillManageRequest::default()
+            },
+        )?,
+    );
+    snapshot.insert(
+        "skill_manage_create".to_string(),
+        skill_manage(
+            &manage_dir,
+            SkillManageRequest {
+                action: "create",
+                name: "managed",
+                content: Some(MANAGED_SKILL_CONTENT),
+                category: Some("devops"),
+                ..SkillManageRequest::default()
+            },
+        )?,
+    );
+    snapshot.insert(
+        "skill_manage_duplicate".to_string(),
+        skill_manage(
+            &manage_dir,
+            SkillManageRequest {
+                action: "create",
+                name: "managed",
+                content: Some(MANAGED_SKILL_CONTENT),
+                ..SkillManageRequest::default()
+            },
+        )?,
+    );
+    snapshot.insert(
+        "skill_manage_write_file".to_string(),
+        skill_manage(
+            &manage_dir,
+            SkillManageRequest {
+                action: "write_file",
+                name: "managed",
+                file_path: Some("references/api.md"),
+                file_content: Some("old endpoint\n"),
+                ..SkillManageRequest::default()
+            },
+        )?,
+    );
+    snapshot.insert(
+        "skill_manage_write_traversal".to_string(),
+        skill_manage(
+            &manage_dir,
+            SkillManageRequest {
+                action: "write_file",
+                name: "managed",
+                file_path: Some("references/../../escape.md"),
+                file_content: Some("escape"),
+                ..SkillManageRequest::default()
+            },
+        )?,
+    );
+    snapshot.insert(
+        "skill_manage_patch_file".to_string(),
+        skill_manage(
+            &manage_dir,
+            SkillManageRequest {
+                action: "patch",
+                name: "managed",
+                file_path: Some("references/api.md"),
+                old_string: Some("old endpoint"),
+                new_string: Some("new endpoint"),
+                ..SkillManageRequest::default()
+            },
+        )?,
+    );
+    snapshot.insert(
+        "skill_manage_remove_missing_file".to_string(),
+        skill_manage(
+            &manage_dir,
+            SkillManageRequest {
+                action: "remove_file",
+                name: "managed",
+                file_path: Some("references/missing.md"),
+                ..SkillManageRequest::default()
+            },
+        )?,
+    );
+    snapshot.insert(
+        "skill_manage_absorbed_missing".to_string(),
+        skill_manage(
+            &manage_dir,
+            SkillManageRequest {
+                action: "delete",
+                name: "managed",
+                absorbed_into: Some("ghost"),
+                ..SkillManageRequest::default()
+            },
+        )?,
+    );
+    snapshot.insert(
+        "skill_manage_delete".to_string(),
+        skill_manage(
+            &manage_dir,
+            SkillManageRequest {
+                action: "delete",
+                name: "managed",
+                absorbed_into: Some(""),
+                ..SkillManageRequest::default()
+            },
+        )?,
+    );
     Ok(snapshot)
+}
+
+const MANAGED_SKILL_CONTENT: &str =
+    "---\nname: managed\ndescription: Managed skill\n---\n# Managed\n\nStep 1: Do managed work.\n";
+
+fn prepare_skill_manage_fixture(skills_dir: &Path) -> io::Result<()> {
+    if skills_dir.exists() {
+        fs::remove_dir_all(skills_dir)?;
+    }
+    fs::create_dir_all(skills_dir)?;
+    Ok(())
 }
 
 fn native_integration_handler_snapshot() -> BTreeMap<String, Value> {

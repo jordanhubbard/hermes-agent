@@ -9,6 +9,7 @@ pub mod homeassistant;
 pub mod memory;
 pub mod safety;
 pub mod session_search;
+pub mod skill_manage;
 pub mod skills;
 pub mod todo;
 

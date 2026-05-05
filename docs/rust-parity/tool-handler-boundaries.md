@@ -23,6 +23,9 @@ Native Rust handler coverage:
 - `skills_list` and `skill_view` for local read-only skill discovery,
   frontmatter/tag/category parsing, linked-file discovery, linked-file reads,
   missing-file suggestions, not-found suggestions, and traversal denial
+- `skill_manage` local mutation semantics for create/edit/patch/delete,
+  supporting-file write/remove, absorbed-into validation, size limits, and
+  path traversal denial
 - Home Assistant handler validation and shaping: entity/service validation,
   blocked service domains, entity filtering by domain/area, state result
   envelopes, service-list compaction, service payload construction, and service
@@ -45,9 +48,10 @@ Documented deletion-blocking boundaries:
   loop before Python agent-loop interceptors can be deleted.
 - `media`: optional provider SDKs, local binaries, and binary artifacts stay in
   Python until Rust provider clients or an external media service are selected.
-- `skills`: `skill_manage`, plugin skills, optional-skill hub operations,
-  provenance, setup prompts, mutation, and prompt-cache-aware slash injection
-  stay in Python.
+- `skills`: plugin skills, optional-skill hub operations, provenance telemetry,
+  setup prompts, and prompt-cache-aware slash injection stay in Python-owned
+  CLI/plugin runtimes until those runtimes move or get a stable external
+  service boundary.
 - `clarify`: only the UI callbacks stay in the Python CLI/gateway platform
   layer until those runtimes are Rust-owned.
 - `cron/messaging`: scheduler state and gateway delivery/send_message clients
