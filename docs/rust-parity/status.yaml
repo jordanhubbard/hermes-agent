@@ -33,6 +33,13 @@ constraints:
       reaches that library directly via a Rust crate (or its native
       interface) — never by calling back into the Python wrapper.
       This rule applies to every row in the matrix below.
+  - title: Contract parity is not full runtime parity
+    body: >
+      Rows marked `tested` prove the Rust code matches Python for the
+      scoped contract described by that row. They do not imply that the
+      Rust binary can replace the Python runtime end to end. Full
+      replacement requires every row in the `hermes-fpr` epic to reach
+      `default` or to be explicitly deferred with owner sign-off.
 
 epics:
   - id: hermes-1oa
@@ -375,6 +382,132 @@ epics:
         status: tested
         ci_gate: GitHub Actions tests.yml — rust job
         notes: The rust job now runs cargo test --workspace, tests/rust/, targeted Rust-state diagnostics and literal hermes CLI smoke tests, then the full tests/parity/ suite. Because it is part of the Tests workflow, any rust-job failure marks the workflow failed; branch-protection UI can additionally require the job name, but the code-level CI gate is in place.
+
+  - id: hermes-fpr
+    name: Full parity and Python removal
+    summary: Convert scoped Rust parity into a Rust-primary production runtime and remove Python only after every supported workflow is covered.
+    rows:
+      - bead: hermes-fpr.1
+        story: Audit every Python entry point against Rust-primary ownership
+        python_paths:
+          - run_agent.py
+          - cli.py
+          - hermes_cli/main.py
+          - gateway/run.py
+          - tui_gateway/server.py
+          - hermes_cli/web_server.py
+          - acp_adapter/
+          - cron/
+          - batch_runner.py
+          - mcp_serve.py
+          - rl_cli.py
+          - tools/
+          - plugins/
+        rust_target: docs/rust-parity/full-parity-plan.md + docs/rust-parity/status.yaml
+        status: planned
+        ci_gate: tests/parity/test_full_parity_plan.py
+        notes: Produce an entry-point inventory that distinguishes contract-tested Rust code from Rust-primary production ownership, including blockers, deletion risks, and required smoke tests.
+      - bead: hermes-fpr.2
+        story: Ship a Rust-owned hermes binary and runtime selector
+        python_paths:
+          - hermes_cli/main.py
+          - pyproject.toml
+          - scripts/install.sh
+        rust_target: crates/hermes-cli + top-level hermes binary
+        status: planned
+        ci_gate: clean-install smoke with HERMES_RUNTIME=rust and HERMES_RUNTIME=python
+        notes: The Rust binary must own command dispatch and select Python only as an explicit fallback during rollout; install/update packaging must install the Rust path on all supported platforms.
+      - bead: hermes-fpr.3
+        story: Make the Rust agent loop production-capable
+        python_paths:
+          - run_agent.py
+          - agent/
+          - model_tools.py
+        rust_target: crates/hermes-agent-core
+        status: planned
+        ci_gate: real provider/mock-server E2E plus parity fixtures under Rust default
+        notes: Add real HTTP clients, streaming, credential selection, fallback, interrupts, budgets, compression, tool dispatch integration, persistence, and lifecycle hooks instead of fixture-only replay.
+      - bead: hermes-fpr.4
+        story: Port all tool handlers or gate explicit non-removable boundaries
+        python_paths:
+          - tools/
+          - model_tools.py
+          - toolsets.py
+        rust_target: crates/hermes-tools
+        status: planned
+        ci_gate: all core tool E2E tests pass with Rust dispatch and Rust handlers
+        notes: Terminal/process, browser/web, delegate/subagent, MCP, memory/todo, media, and environment backends must be Rust-owned or have a documented external boundary that survives Python source deletion.
+      - bead: hermes-fpr.5
+        story: Port gateway runner and production platform adapters
+        python_paths:
+          - gateway/run.py
+          - gateway/platforms/
+          - gateway/session.py
+        rust_target: crates/hermes-gateway
+        status: planned
+        ci_gate: gateway smoke matrix for every built-in platform adapter with Rust runtime
+        notes: Move beyond adapter-boundary snapshots to real platform lifecycle, message guards, approvals, background notifications, token locks, slash commands, delivery, and restart/update behavior.
+      - bead: hermes-fpr.6
+        story: Port CLI setup/auth/model/config/update/profile/log/skin surfaces
+        python_paths:
+          - cli.py
+          - hermes_cli/
+          - hermes_constants.py
+          - hermes_logging.py
+        rust_target: crates/hermes-cli + crates/hermes-config
+        status: planned
+        ci_gate: CLI smoke suite from clean temp HOME and migrated profile fixtures
+        notes: Rust must own setup wizard, auth, provider/model selection, config migration, profiles, logs, update flow, skins/display, skills commands, and interactive/non-interactive behavior.
+      - bead: hermes-fpr.7
+        story: Port integration runtimes around the primary agent
+        python_paths:
+          - tui_gateway/
+          - hermes_cli/web_server.py
+          - acp_adapter/
+          - cron/
+          - batch_runner.py
+          - mcp_serve.py
+          - rl_cli.py
+        rust_target: crates/hermes-tui-gateway + crates/hermes-dashboard + crates/hermes-acp + crates/hermes-integrations
+        status: planned
+        ci_gate: TUI/dashboard/ACP/cron/batch/MCP/RL E2E tests with Rust runtime
+        notes: Snapshot contracts must become production implementations with real session/state/tool/provider integration.
+      - bead: hermes-fpr.8
+        story: Preserve skills and plugin compatibility without in-repo Python
+        python_paths:
+          - skills/
+          - optional-skills/
+          - plugins/
+          - hermes_cli/plugins.py
+        rust_target: Rust plugin/skill loader ABI and migration tooling
+        status: planned
+        ci_gate: built-in/user/pip plugin and skill compatibility suite under Rust runtime
+        notes: Decide whether Python plugins remain an external user extension mechanism, are sandboxed behind a stable IPC ABI, or are migrated; in-repo Python plugin dependencies cannot be required after source removal.
+      - bead: hermes-fpr.9
+        story: Run shadow Python-vs-Rust execution and divergence triage
+        python_paths:
+          - tests/parity/
+          - scripts/
+        rust_target: shadow runtime harness
+        status: planned
+        ci_gate: shadow diff suite for representative mutable and non-mutable workflows
+        notes: Dual-run the same prompts, tool calls, state mutations, gateway events, and CLI commands through Python and Rust, classify divergences, and block default flips on unexplained behavior differences.
+      - bead: hermes-fpr.10
+        story: Flip Rust to default and remove Python sources
+        python_paths:
+          - run_agent.py
+          - cli.py
+          - model_tools.py
+          - hermes_cli/
+          - gateway/
+          - tui_gateway/
+          - acp_adapter/
+          - tools/
+          - plugins/
+        rust_target: Rust default runtime and deletion commit
+        status: planned
+        ci_gate: scripts/run_tests.sh equivalent with Rust default + cargo test --workspace + clean install smoke
+        notes: This is a final gate, not an implementation bead. Python removal is allowed only after every previous fpr row is default or explicitly deferred with owner sign-off and rollback/release notes are complete.
 
 # Subsystems that exist in Rust but are not yet on the cutover ladder.
 # These are descriptive-only and not bead-tracked.

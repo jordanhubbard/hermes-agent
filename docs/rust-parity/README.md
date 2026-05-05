@@ -8,6 +8,8 @@ Tracks the migration of Hermes subsystems from Python to Rust. Source of truth: 
 
 **Rust crates do not link to in-repo Python.** Every Rust crate in this repo is a standalone reimplementation. It must not import or link in-repo Python code, must not be built as a Python extension whose sole purpose is to be loaded by CPython (e.g. PyO3 wheels), and must not embed CPython. Where a Python module in this repo wraps a third-party library, the Rust side reaches that library directly via a Rust crate (or its native interface) — never by calling back into the Python wrapper. This rule applies to every row in the matrix below.
 
+**Contract parity is not full runtime parity.** Rows marked `tested` prove the Rust code matches Python for the scoped contract described by that row. They do not imply that the Rust binary can replace the Python runtime end to end. Full replacement requires every row in the `hermes-fpr` epic to reach `default` or to be explicitly deferred with owner sign-off.
+
 ## Status ladder
 
 - `planned`
@@ -22,14 +24,14 @@ Tracks the migration of Hermes subsystems from Python to Rust. Source of truth: 
 
 | Status | Count | Share |
 | --- | ---: | ---: |
-| `planned` | 0 | 0% |
+| `planned` | 10 | 24% |
 | `in_progress` | 0 | 0% |
 | `ported` | 0 | 0% |
-| `tested` | 32 | 100% |
+| `tested` | 32 | 76% |
 | `production_wired` | 0 | 0% |
 | `default` | 0 | 0% |
 | `deferred` | 0 | 0% |
-| **total** | **32** | 100% |
+| **total** | **42** | 100% |
 
 ## hermes-1oa — Agent core runtime
 
@@ -150,6 +152,33 @@ Replace direct SessionDB construction with a backend factory and exercise the Ru
 | | _e2e test drives env -> factory -> RustSessionDB(daemon) -> daemon binary -> SQLite through a realistic session lifecycle (create, append user/assistant/tool/reasoning messages, update tokens, FTS search, rich list, end, delete) — the same call shapes cli.py, gateway/run.py, hermes_cli/web_server.py use. Subprocess-invocation smoke for the literal hermes CLI binary is a follow-up; the underlying behavior is already gated._ |  |  |  |  |
 | `hermes-te4.4` | Make Rust state parity mandatory in CI | `tested` | `.github/workflows/tests.yml` | `required CI job` | `GitHub Actions tests.yml — rust job` |
 | | _The rust job now runs cargo test --workspace, tests/rust/, targeted Rust-state diagnostics and literal hermes CLI smoke tests, then the full tests/parity/ suite. Because it is part of the Tests workflow, any rust-job failure marks the workflow failed; branch-protection UI can additionally require the job name, but the code-level CI gate is in place._ |  |  |  |  |
+
+## hermes-fpr — Full parity and Python removal
+
+Convert scoped Rust parity into a Rust-primary production runtime and remove Python only after every supported workflow is covered.
+
+| Bead | Story | Status | Python | Rust target | CI gate |
+| --- | --- | --- | --- | --- | --- |
+| `hermes-fpr.1` | Audit every Python entry point against Rust-primary ownership | `planned` | `run_agent.py`<br>`cli.py`<br>`hermes_cli/main.py`<br>`gateway/run.py`<br>`tui_gateway/server.py`<br>`hermes_cli/web_server.py`<br>`acp_adapter/`<br>`cron/`<br>`batch_runner.py`<br>`mcp_serve.py`<br>`rl_cli.py`<br>`tools/`<br>`plugins/` | `docs/rust-parity/full-parity-plan.md + docs/rust-parity/status.yaml` | `tests/parity/test_full_parity_plan.py` |
+| | _Produce an entry-point inventory that distinguishes contract-tested Rust code from Rust-primary production ownership, including blockers, deletion risks, and required smoke tests._ |  |  |  |  |
+| `hermes-fpr.2` | Ship a Rust-owned hermes binary and runtime selector | `planned` | `hermes_cli/main.py`<br>`pyproject.toml`<br>`scripts/install.sh` | `crates/hermes-cli + top-level hermes binary` | `clean-install smoke with HERMES_RUNTIME=rust and HERMES_RUNTIME=python` |
+| | _The Rust binary must own command dispatch and select Python only as an explicit fallback during rollout; install/update packaging must install the Rust path on all supported platforms._ |  |  |  |  |
+| `hermes-fpr.3` | Make the Rust agent loop production-capable | `planned` | `run_agent.py`<br>`agent/`<br>`model_tools.py` | `crates/hermes-agent-core` | `real provider/mock-server E2E plus parity fixtures under Rust default` |
+| | _Add real HTTP clients, streaming, credential selection, fallback, interrupts, budgets, compression, tool dispatch integration, persistence, and lifecycle hooks instead of fixture-only replay._ |  |  |  |  |
+| `hermes-fpr.4` | Port all tool handlers or gate explicit non-removable boundaries | `planned` | `tools/`<br>`model_tools.py`<br>`toolsets.py` | `crates/hermes-tools` | `all core tool E2E tests pass with Rust dispatch and Rust handlers` |
+| | _Terminal/process, browser/web, delegate/subagent, MCP, memory/todo, media, and environment backends must be Rust-owned or have a documented external boundary that survives Python source deletion._ |  |  |  |  |
+| `hermes-fpr.5` | Port gateway runner and production platform adapters | `planned` | `gateway/run.py`<br>`gateway/platforms/`<br>`gateway/session.py` | `crates/hermes-gateway` | `gateway smoke matrix for every built-in platform adapter with Rust runtime` |
+| | _Move beyond adapter-boundary snapshots to real platform lifecycle, message guards, approvals, background notifications, token locks, slash commands, delivery, and restart/update behavior._ |  |  |  |  |
+| `hermes-fpr.6` | Port CLI setup/auth/model/config/update/profile/log/skin surfaces | `planned` | `cli.py`<br>`hermes_cli/`<br>`hermes_constants.py`<br>`hermes_logging.py` | `crates/hermes-cli + crates/hermes-config` | `CLI smoke suite from clean temp HOME and migrated profile fixtures` |
+| | _Rust must own setup wizard, auth, provider/model selection, config migration, profiles, logs, update flow, skins/display, skills commands, and interactive/non-interactive behavior._ |  |  |  |  |
+| `hermes-fpr.7` | Port integration runtimes around the primary agent | `planned` | `tui_gateway/`<br>`hermes_cli/web_server.py`<br>`acp_adapter/`<br>`cron/`<br>`batch_runner.py`<br>`mcp_serve.py`<br>`rl_cli.py` | `crates/hermes-tui-gateway + crates/hermes-dashboard + crates/hermes-acp + crates/hermes-integrations` | `TUI/dashboard/ACP/cron/batch/MCP/RL E2E tests with Rust runtime` |
+| | _Snapshot contracts must become production implementations with real session/state/tool/provider integration._ |  |  |  |  |
+| `hermes-fpr.8` | Preserve skills and plugin compatibility without in-repo Python | `planned` | `skills/`<br>`optional-skills/`<br>`plugins/`<br>`hermes_cli/plugins.py` | `Rust plugin/skill loader ABI and migration tooling` | `built-in/user/pip plugin and skill compatibility suite under Rust runtime` |
+| | _Decide whether Python plugins remain an external user extension mechanism, are sandboxed behind a stable IPC ABI, or are migrated; in-repo Python plugin dependencies cannot be required after source removal._ |  |  |  |  |
+| `hermes-fpr.9` | Run shadow Python-vs-Rust execution and divergence triage | `planned` | `tests/parity/`<br>`scripts/` | `shadow runtime harness` | `shadow diff suite for representative mutable and non-mutable workflows` |
+| | _Dual-run the same prompts, tool calls, state mutations, gateway events, and CLI commands through Python and Rust, classify divergences, and block default flips on unexplained behavior differences._ |  |  |  |  |
+| `hermes-fpr.10` | Flip Rust to default and remove Python sources | `planned` | `run_agent.py`<br>`cli.py`<br>`model_tools.py`<br>`hermes_cli/`<br>`gateway/`<br>`tui_gateway/`<br>`acp_adapter/`<br>`tools/`<br>`plugins/` | `Rust default runtime and deletion commit` | `scripts/run_tests.sh equivalent with Rust default + cargo test --workspace + clean install smoke` |
+| | _This is a final gate, not an implementation bead. Python removal is allowed only after every previous fpr row is default or explicitly deferred with owner sign-off and rollback/release notes are complete._ |  |  |  |  |
 
 ## Existing Rust footprint (not yet on the cutover ladder)
 
