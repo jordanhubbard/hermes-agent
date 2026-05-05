@@ -89,11 +89,13 @@ def _python_snapshot(root: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, A
 
     agent_native = _python_agent_handler_snapshot(root, monkeypatch)
     skill_native = _python_skill_handler_snapshot(root, monkeypatch)
+    integration_native = _python_integration_handler_snapshot()
 
     return {
         "native_file_handlers": native,
         "native_agent_handlers": agent_native,
         "native_skill_handlers": skill_native,
+        "native_integration_handlers": integration_native,
         "python_boundaries": _documented_python_boundaries(),
     }
 
@@ -186,6 +188,16 @@ def test_native_skill_handler_snapshot_matches_python(monkeypatch: pytest.Monkey
     )["native_skill_handlers"]
 
 
+def test_native_integration_handler_snapshot_matches_python(monkeypatch: pytest.MonkeyPatch) -> None:
+    rust_root = _clean_root(f"integration-handler-parity-rust-{os.getpid()}")
+    python_root = _clean_root(f"integration-handler-parity-python-{os.getpid()}")
+
+    assert _rust_snapshot(rust_root)["native_integration_handlers"] == _python_snapshot(
+        python_root,
+        monkeypatch,
+    )["native_integration_handlers"]
+
+
 def test_process_and_terminal_boundary_contracts() -> None:
     snapshot = _rust_snapshot(_clean_root(f"handler-boundary-rust-{os.getpid()}"))
     terminal = next(
@@ -212,7 +224,8 @@ def test_non_file_tool_families_have_documented_boundaries() -> None:
         "media",
         "skills",
         "clarify",
-        "cron/messaging/homeassistant",
+        "cron/messaging",
+        "homeassistant",
         "kanban",
     } <= set(families)
     assert BOUNDARY_DOC.exists()
@@ -236,8 +249,14 @@ def test_all_core_tools_are_native_or_explicit_boundaries() -> None:
     assert "session_search" in snapshot["native_tools"]
     assert "skills_list" in snapshot["native_tools"]
     assert "skill_view" in snapshot["native_tools"]
+    assert "ha_list_entities" in snapshot["native_tools"]
+    assert "ha_get_state" in snapshot["native_tools"]
+    assert "ha_list_services" in snapshot["native_tools"]
+    assert "ha_call_service" in snapshot["native_tools"]
     assert "execute_code" in snapshot["boundary_tools"]
     assert "skill_manage" in snapshot["boundary_tools"]
+    assert "cronjob" in snapshot["boundary_tools"]
+    assert "send_message" in snapshot["boundary_tools"]
     assert "kanban_create" in snapshot["boundary_tools"]
     assert all("deletion_plan" in item for item in snapshot["python_boundaries"])
     assert all(item["deletion_blocker"] is True for item in snapshot["python_boundaries"])
@@ -511,6 +530,134 @@ def _python_skill_handler_snapshot(root: Path, monkeypatch: pytest.MonkeyPatch) 
     return snapshot
 
 
+def _python_integration_handler_snapshot() -> dict[str, Any]:
+    from unittest.mock import patch
+
+    from tools import homeassistant_tool as ha
+
+    states = _python_homeassistant_states()
+    service_result = [
+        {"entity_id": "light.kitchen", "state": "on"},
+        {"entity_id": "switch.fan", "state": "off"},
+    ]
+    state = {
+        "entity_id": "light.kitchen",
+        "state": "on",
+        "attributes": {"friendly_name": "Kitchen Light", "brightness": 200},
+        "last_changed": "2026-05-01T00:00:00+00:00",
+        "last_updated": "2026-05-01T00:01:00+00:00",
+    }
+    services_summary = {
+        "count": 1,
+        "domains": [
+            {
+                "domain": "light",
+                "services": {
+                    "turn_on": {
+                        "description": "Turn on light",
+                        "fields": {"brightness": "Brightness level"},
+                    },
+                    "turn_off": {"description": "Turn off light"},
+                },
+            }
+        ],
+    }
+
+    snapshot = {}
+    snapshot["ha_list_entities_all"] = {
+        "result": ha._filter_and_summarize(states)
+    }
+    snapshot["ha_list_entities_filtered"] = {
+        "result": ha._filter_and_summarize(states, domain="light", area="kitchen")
+    }
+    snapshot["ha_get_state_missing"] = json.loads(ha._handle_get_state({}))
+    snapshot["ha_get_state_invalid"] = json.loads(
+        ha._handle_get_state({"entity_id": "../../api"})
+    )
+    with patch("tools.homeassistant_tool._async_get_state", lambda _entity_id: state), \
+            patch("tools.homeassistant_tool._run_async", lambda result: result):
+        snapshot["ha_get_state_success"] = json.loads(
+            ha._handle_get_state({"entity_id": "light.kitchen"})
+        )
+    with patch("tools.homeassistant_tool._async_list_services", lambda domain=None: services_summary), \
+            patch("tools.homeassistant_tool._run_async", lambda result: result):
+        snapshot["ha_list_services"] = json.loads(
+            ha._handle_list_services({"domain": "light"})
+        )
+    snapshot["ha_call_service_missing"] = json.loads(
+        ha._handle_call_service({"domain": "", "service": "turn_on"})
+    )
+    snapshot["ha_call_service_invalid_domain"] = json.loads(
+        ha._handle_call_service({"domain": "../../api", "service": "turn_on"})
+    )
+    snapshot["ha_call_service_blocked"] = json.loads(
+        ha._handle_call_service({"domain": "shell_command", "service": "run"})
+    )
+    snapshot["ha_call_service_invalid_entity"] = json.loads(
+        ha._handle_call_service(
+            {"domain": "light", "service": "turn_on", "entity_id": "bad/entity"}
+        )
+    )
+    snapshot["ha_call_service_payload"] = ha._build_service_payload(
+        "light.kitchen",
+        {"entity_id": "light.old", "brightness": 255},
+    )
+    parsed_response = ha._parse_service_response("light", "turn_on", service_result)
+    snapshot["ha_call_service_parse_response"] = parsed_response
+    with patch(
+        "tools.homeassistant_tool._async_call_service",
+        lambda *_args, **_kwargs: parsed_response,
+    ), patch("tools.homeassistant_tool._run_async", lambda result: result):
+        snapshot["ha_call_service_success"] = json.loads(
+            ha._handle_call_service(
+                {
+                    "domain": "light",
+                    "service": "turn_on",
+                    "entity_id": "light.kitchen",
+                    "data": '{"brightness": 255}',
+                }
+            )
+        )
+    return snapshot
+
+
+def _python_homeassistant_states() -> list[dict[str, Any]]:
+    return [
+        {
+            "entity_id": "light.kitchen",
+            "state": "on",
+            "attributes": {"friendly_name": "Kitchen Light", "area": "Kitchen"},
+        },
+        {
+            "entity_id": "switch.fan",
+            "state": "off",
+            "attributes": {"friendly_name": "Living Room Fan", "area": "Living Room"},
+        },
+    ]
+
+
+def _python_homeassistant_services() -> list[dict[str, Any]]:
+    return [
+        {
+            "domain": "light",
+            "services": {
+                "turn_on": {
+                    "description": "Turn on light",
+                    "fields": {
+                        "brightness": {"description": "Brightness level"},
+                        "ignored": "not a dict",
+                    },
+                },
+                "turn_off": {"description": "Turn off light"},
+            },
+        },
+        {
+            "domain": "switch",
+            "services": {"turn_on": {"description": "Turn on switch"}},
+        },
+    ]
+
+
 def _documented_python_boundaries() -> list[dict[str, Any]]:
     return [
         {
@@ -601,20 +748,22 @@ def _documented_python_boundaries() -> list[dict[str, Any]]:
             "reason": "Clarify validation and result shaping are native Rust; the UI interaction callback is still Python-owned in CLI and gateway runtimes.",
         },
         {
-            "family": "cron/messaging/homeassistant",
+            "family": "cron/messaging",
             "boundary": "integration_runtime_boundary",
-            "tools": [
-                "cronjob",
-                "send_message",
-                "ha_list_entities",
-                "ha_get_state",
-                "ha_list_services",
-                "ha_call_service",
-            ],
+            "tools": ["cronjob", "send_message"],
             "parity_gate": "tests/parity/tools/test_handlers.py::test_all_core_tools_are_native_or_explicit_boundaries",
             "deletion_blocker": True,
-            "deletion_plan": "Port cron, gateway delivery, and Home Assistant clients to Rust integration crates or require external adapters with stable request/response contracts.",
-            "reason": "These tools cross gateway/integration runtimes, credentials, network adapters, and scheduler state that are not Rust-owned yet.",
+            "deletion_plan": "Port cron scheduler state and gateway delivery/send_message clients to Rust integration crates or require external adapters with stable request/response contracts.",
+            "reason": "cronjob and send_message cross gateway delivery runtimes, credentials, network adapters, and scheduler state that are not Rust-owned yet.",
+        },
+        {
+            "family": "homeassistant",
+            "boundary": "integration_runtime_boundary",
+            "tools": [],
+            "parity_gate": "tests/parity/tools/test_handlers.py::test_non_file_tool_families_have_documented_boundaries",
+            "deletion_blocker": True,
+            "deletion_plan": "Wire the native Home Assistant handler surface to a production Rust HTTP client with credential/config loading before deleting Python integration code.",
+            "reason": "Home Assistant validation, filtering, payload, and result-envelope semantics are native Rust; live REST client wiring remains an integration runtime task.",
         },
         {
             "family": "kanban",

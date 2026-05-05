@@ -23,6 +23,10 @@ Native Rust handler coverage:
 - `skills_list` and `skill_view` for local read-only skill discovery,
   frontmatter/tag/category parsing, linked-file discovery, linked-file reads,
   missing-file suggestions, not-found suggestions, and traversal denial
+- Home Assistant handler validation and shaping: entity/service validation,
+  blocked service domains, entity filtering by domain/area, state result
+  envelopes, service-list compaction, service payload construction, and service
+  response parsing
 
 Documented deletion-blocking boundaries:
 
@@ -46,8 +50,10 @@ Documented deletion-blocking boundaries:
   stay in Python.
 - `clarify`: only the UI callbacks stay in the Python CLI/gateway platform
   layer until those runtimes are Rust-owned.
-- `cron/messaging/homeassistant`: scheduler state, gateway delivery, and
-  Home Assistant network clients stay behind Python integration runtimes.
+- `cron/messaging`: scheduler state and gateway delivery/send_message clients
+  stay behind Python integration runtimes.
+- `homeassistant`: native handler semantics still need production Rust HTTP
+  client wiring with credential/config loading.
 - `kanban`: dispatcher task state and worker ownership checks stay in Python
   until `kanban_db` and worker-context APIs are Rust-owned or externalized.
 

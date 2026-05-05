@@ -5,6 +5,7 @@ use serde_json::{json, Number, Value};
 
 pub mod clarify;
 pub mod handlers;
+pub mod homeassistant;
 pub mod memory;
 pub mod safety;
 pub mod session_search;

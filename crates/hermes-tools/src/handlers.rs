@@ -7,6 +7,10 @@ use serde::Serialize;
 use serde_json::{json, Value};
 
 use crate::clarify::{clarify_response, ClarifyCallback};
+use crate::homeassistant::{
+    build_service_payload, ha_call_service_response, ha_get_state_response,
+    ha_list_entities_response, ha_list_services_response, parse_service_response,
+};
 use crate::memory::{memory_response, MemoryStore};
 use crate::session_search::{
     session_search_response, ConversationMessage, SearchMatch, SessionRecord, SessionSearchStore,
@@ -19,6 +23,7 @@ pub struct HandlerParitySnapshot {
     pub native_file_handlers: BTreeMap<String, Value>,
     pub native_agent_handlers: BTreeMap<String, Value>,
     pub native_skill_handlers: BTreeMap<String, Value>,
+    pub native_integration_handlers: BTreeMap<String, Value>,
     pub python_boundaries: Vec<ToolHandlerBoundary>,
     pub native_tools: Vec<String>,
     pub boundary_tools: Vec<String>,
@@ -72,9 +77,14 @@ pub fn handler_parity_snapshot(root: &Path) -> io::Result<HandlerParitySnapshot>
 
     let native_agent_handlers = native_agent_handler_snapshot();
     let native_skill_handlers = native_skill_handler_snapshot(root)?;
+    let native_integration_handlers = native_integration_handler_snapshot();
     let python_boundaries = documented_python_boundaries();
     let native_tools = vec![
         "clarify".to_string(),
+        "ha_call_service".to_string(),
+        "ha_get_state".to_string(),
+        "ha_list_entities".to_string(),
+        "ha_list_services".to_string(),
         "memory".to_string(),
         "patch".to_string(),
         "read_file".to_string(),
@@ -92,6 +102,7 @@ pub fn handler_parity_snapshot(root: &Path) -> io::Result<HandlerParitySnapshot>
         native_file_handlers,
         native_agent_handlers,
         native_skill_handlers,
+        native_integration_handlers,
         python_boundaries,
         native_tools,
         boundary_tools,
@@ -406,20 +417,22 @@ fn documented_python_boundaries() -> Vec<ToolHandlerBoundary> {
             reason: "Clarify validation and result shaping are native Rust; the UI interaction callback is still Python-owned in CLI and gateway runtimes.".to_string(),
         },
         ToolHandlerBoundary {
-            family: "cron/messaging/homeassistant".to_string(),
+            family: "cron/messaging".to_string(),
             boundary: "integration_runtime_boundary".to_string(),
-            tools: vec![
-                "cronjob".to_string(),
-                "send_message".to_string(),
-                "ha_list_entities".to_string(),
-                "ha_get_state".to_string(),
-                "ha_list_services".to_string(),
-                "ha_call_service".to_string(),
-            ],
+            tools: vec!["cronjob".to_string(), "send_message".to_string()],
             parity_gate: "tests/parity/tools/test_handlers.py::test_all_core_tools_are_native_or_explicit_boundaries".to_string(),
             deletion_blocker: true,
-            deletion_plan: "Port cron, gateway delivery, and Home Assistant clients to Rust integration crates or require external adapters with stable request/response contracts.".to_string(),
-            reason: "These tools cross gateway/integration runtimes, credentials, network adapters, and scheduler state that are not Rust-owned yet.".to_string(),
+            deletion_plan: "Port cron scheduler state and gateway delivery/send_message clients to Rust integration crates or require external adapters with stable request/response contracts.".to_string(),
+            reason: "cronjob and send_message cross gateway delivery runtimes, credentials, network adapters, and scheduler state that are not Rust-owned yet.".to_string(),
+        },
+        ToolHandlerBoundary {
+            family: "homeassistant".to_string(),
+            boundary: "integration_runtime_boundary".to_string(),
+            tools: Vec::new(),
+            parity_gate: "tests/parity/tools/test_handlers.py::test_non_file_tool_families_have_documented_boundaries".to_string(),
+            deletion_blocker: true,
+            deletion_plan: "Wire the native Home Assistant handler surface to a production Rust HTTP client with credential/config loading before deleting Python integration code.".to_string(),
+            reason: "Home Assistant validation, filtering, payload, and result-envelope semantics are native Rust; live REST client wiring remains an integration runtime task.".to_string(),
         },
         ToolHandlerBoundary {
             family: "kanban".to_string(),
@@ -787,6 +800,131 @@ fn native_skill_handler_snapshot(root: &Path) -> io::Result<BTreeMap<String, Val
         skill_view(&skills_dir, "missing-skill", None)?,
     );
     Ok(snapshot)
+}
+
+fn native_integration_handler_snapshot() -> BTreeMap<String, Value> {
+    let states = homeassistant_states();
+    let services = homeassistant_services();
+    let service_result = json!([
+        {"entity_id": "light.kitchen", "state": "on"},
+        {"entity_id": "switch.fan", "state": "off"}
+    ]);
+    let state = json!({
+        "entity_id": "light.kitchen",
+        "state": "on",
+        "attributes": {"friendly_name": "Kitchen Light", "brightness": 200},
+        "last_changed": "2026-05-01T00:00:00+00:00",
+        "last_updated": "2026-05-01T00:01:00+00:00"
+    });
+
+    let mut snapshot = BTreeMap::new();
+    snapshot.insert(
+        "ha_list_entities_all".to_string(),
+        ha_list_entities_response(&states, None, None),
+    );
+    snapshot.insert(
+        "ha_list_entities_filtered".to_string(),
+        ha_list_entities_response(&states, Some("light"), Some("kitchen")),
+    );
+    snapshot.insert(
+        "ha_get_state_missing".to_string(),
+        ha_get_state_response("", None),
+    );
+    snapshot.insert(
+        "ha_get_state_invalid".to_string(),
+        ha_get_state_response("../../api", None),
+    );
+    snapshot.insert(
+        "ha_get_state_success".to_string(),
+        ha_get_state_response("light.kitchen", Some(&state)),
+    );
+    snapshot.insert(
+        "ha_list_services".to_string(),
+        ha_list_services_response(&services, Some("light")),
+    );
+    snapshot.insert(
+        "ha_call_service_missing".to_string(),
+        ha_call_service_response("", "turn_on", None, None, Some(&service_result)),
+    );
+    snapshot.insert(
+        "ha_call_service_invalid_domain".to_string(),
+        ha_call_service_response("../../api", "turn_on", None, None, Some(&service_result)),
+    );
+    snapshot.insert(
+        "ha_call_service_blocked".to_string(),
+        ha_call_service_response("shell_command", "run", None, None, Some(&service_result)),
+    );
+    snapshot.insert(
+        "ha_call_service_invalid_entity".to_string(),
+        ha_call_service_response(
+            "light",
+            "turn_on",
+            Some("bad/entity"),
+            None,
+            Some(&service_result),
+        ),
+    );
+    snapshot.insert(
+        "ha_call_service_payload".to_string(),
+        build_service_payload(
+            Some("light.kitchen"),
+            Some(&json!({"entity_id": "light.old", "brightness": 255})),
+        ),
+    );
+    snapshot.insert(
+        "ha_call_service_parse_response".to_string(),
+        parse_service_response("light", "turn_on", &service_result),
+    );
+    snapshot.insert(
+        "ha_call_service_success".to_string(),
+        ha_call_service_response(
+            "light",
+            "turn_on",
+            Some("light.kitchen"),
+            Some(&json!("{\"brightness\": 255}")),
+            Some(&service_result),
+        ),
+    );
+    snapshot
+}
+
+fn homeassistant_states() -> Vec<Value> {
+    vec![
+        json!({
+            "entity_id": "light.kitchen",
+            "state": "on",
+            "attributes": {"friendly_name": "Kitchen Light", "area": "Kitchen"},
+        }),
+        json!({
+            "entity_id": "switch.fan",
+            "state": "off",
+            "attributes": {"friendly_name": "Living Room Fan", "area": "Living Room"},
+        }),
+    ]
+}
+
+fn homeassistant_services() -> Vec<Value> {
+    vec![
+        json!({
+            "domain": "light",
+            "services": {
+                "turn_on": {
+                    "description": "Turn on light",
+                    "fields": {
+                        "brightness": {"description": "Brightness level"},
+                        "ignored": "not a dict"
+                    }
+                },
+                "turn_off": {"description": "Turn off light"}
+            }
+        }),
+        json!({
+            "domain": "switch",
+            "services": {
+                "turn_on": {"description": "Turn on switch"}
+            }
+        }),
+    ]
 }
 
 fn documented_boundary_tools(boundaries: &[ToolHandlerBoundary]) -> Vec<String> {
