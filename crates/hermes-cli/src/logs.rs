@@ -3,6 +3,8 @@ use std::fs;
 use std::path::Path;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use chrono::{Local, NaiveDateTime, TimeZone};
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LogsOutcome {
     pub output: String,
@@ -17,6 +19,7 @@ struct LogsRequest {
     level: Option<String>,
     session: Option<String>,
     component: Option<String>,
+    since: Option<String>,
 }
 
 pub fn run_logs_command(args: &[OsString], hermes_home: &Path, display_home: &str) -> LogsOutcome {
@@ -64,6 +67,7 @@ fn parse_logs_args(args: &[OsString]) -> Result<LogsRequest, String> {
         level: None,
         session: None,
         component: None,
+        since: None,
     };
     let mut positional = Vec::new();
     let mut i = 1;
@@ -116,8 +120,18 @@ fn parse_logs_args(args: &[OsString]) -> Result<LogsRequest, String> {
             i += 2;
             continue;
         }
-        if arg == OsStr::new("--since") || arg.to_string_lossy().starts_with("--since=") {
-            return Err("HERMES_RUNTIME=rust selected, but logs --since is not Rust-owned yet. Use HERMES_RUNTIME=python for the rollout fallback.".to_string());
+        if arg == OsStr::new("--since") {
+            let Some(value) = args.get(i + 1) else {
+                return Err("argument --since requires a value".to_string());
+            };
+            request.since = Some(value.to_string_lossy().into_owned());
+            i += 2;
+            continue;
+        }
+        if let Some(value) = arg.to_string_lossy().strip_prefix("--since=") {
+            request.since = Some(value.to_string());
+            i += 1;
+            continue;
         }
         if arg.to_string_lossy().starts_with('-') {
             return Err(format!("unknown logs option: {}", arg.to_string_lossy()));
@@ -226,8 +240,14 @@ fn render_log_tail(
         Some(component) => Some(component_prefixes(component)?),
         None => None,
     };
-    let has_filters =
-        min_level.is_some() || request.session.is_some() || component_prefixes.is_some();
+    let since_cutoff = match request.since.as_ref() {
+        Some(since) => Some(parse_since_cutoff(since)?),
+        None => None,
+    };
+    let has_filters = min_level.is_some()
+        || request.session.is_some()
+        || component_prefixes.is_some()
+        || since_cutoff.is_some();
     let raw_lines = read_last_lines(
         &log_path,
         if has_filters {
@@ -245,6 +265,7 @@ fn render_log_tail(
                     min_level.as_deref(),
                     request.session.as_deref(),
                     component_prefixes.as_deref(),
+                    since_cutoff,
                 )
             })
             .rev()
@@ -266,6 +287,9 @@ fn render_log_tail(
     }
     if let Some(component) = &request.component {
         filter_parts.push(format!("component={component}"));
+    }
+    if let Some(since) = &request.since {
+        filter_parts.push(format!("since={since}"));
     }
     let filter_desc = if filter_parts.is_empty() {
         String::new()
@@ -319,7 +343,15 @@ fn matches_filters(
     min_level: Option<&str>,
     session: Option<&str>,
     component_prefixes: Option<&[&str]>,
+    since_cutoff: Option<i64>,
 ) -> bool {
+    if let Some(cutoff) = since_cutoff {
+        if let Some(ts) = parse_line_timestamp(line) {
+            if ts < cutoff {
+                return false;
+            }
+        }
+    }
     if let Some(min_level) = min_level {
         if let Some(level) = extract_level(line) {
             if level_rank(level).unwrap_or(0) < level_rank(min_level).unwrap_or(0) {
@@ -341,6 +373,41 @@ fn matches_filters(
         }
     }
     true
+}
+
+fn parse_since_cutoff(since: &str) -> Result<i64, String> {
+    let raw = since.trim().to_ascii_lowercase();
+    if raw.len() < 2 {
+        return Err(format!(
+            "Invalid --since value: {since:?}. Use format like '1h', '30m', '2d'."
+        ));
+    }
+    let (digits, unit) = raw.split_at(raw.len() - 1);
+    let value = digits.trim().parse::<i64>().map_err(|_| {
+        format!("Invalid --since value: {since:?}. Use format like '1h', '30m', '2d'.")
+    })?;
+    let seconds = match unit {
+        "s" => value,
+        "m" => value.saturating_mul(60),
+        "h" => value.saturating_mul(3600),
+        "d" => value.saturating_mul(86_400),
+        _ => {
+            return Err(format!(
+                "Invalid --since value: {since:?}. Use format like '1h', '30m', '2d'."
+            ));
+        }
+    };
+    Ok(Local::now().timestamp().saturating_sub(seconds))
+}
+
+fn parse_line_timestamp(line: &str) -> Option<i64> {
+    let timestamp = line.get(0..19)?;
+    let parsed = NaiveDateTime::parse_from_str(timestamp, "%Y-%m-%d %H:%M:%S").ok()?;
+    Local
+        .from_local_datetime(&parsed)
+        .single()
+        .or_else(|| Local.from_local_datetime(&parsed).earliest())
+        .map(|dt| dt.timestamp())
 }
 
 fn extract_level(line: &str) -> Option<&str> {
@@ -420,13 +487,22 @@ mod tests {
             "2026-05-05 10:00:00 ERROR tools.file: bad",
             Some("WARNING"),
             None,
+            None,
             None
         ));
         assert!(!matches_filters(
             "2026-05-05 10:00:00 INFO tools.file: info",
             Some("WARNING"),
             None,
+            None,
             None
         ));
+    }
+
+    #[test]
+    fn parses_since_values_like_python() {
+        assert!(parse_since_cutoff("30m").is_ok());
+        assert!(parse_since_cutoff("2 h").is_ok());
+        assert!(parse_since_cutoff("bad").is_err());
     }
 }

@@ -114,7 +114,10 @@ pub fn is_rust_config_show_request(args: &[OsString]) -> bool {
 pub fn is_rust_auth_request(args: &[OsString]) -> bool {
     args.first().is_some_and(|arg| arg == OsStr::new("auth"))
         && args.get(1).is_some_and(|arg| {
-            arg == OsStr::new("list") || arg == OsStr::new("remove") || arg == OsStr::new("reset")
+            arg == OsStr::new("list")
+                || arg == OsStr::new("remove")
+                || arg == OsStr::new("reset")
+                || arg == OsStr::new("status")
         })
 }
 

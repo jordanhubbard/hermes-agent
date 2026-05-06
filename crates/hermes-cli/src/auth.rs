@@ -3,7 +3,7 @@ use std::ffi::OsString;
 use std::fs;
 use std::path::Path;
 
-use chrono::{Local, SecondsFormat};
+use chrono::{DateTime, Local, SecondsFormat, Utc};
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -66,6 +66,18 @@ pub fn run_auth_command(args: &[OsString], hermes_home: &Path) -> AuthOutcome {
                 return AuthOutcome::usage("usage: hermes auth reset <provider>\n");
             }
             reset_auth_statuses(hermes_home, &provider)
+        }
+        Some(action) if action == "status" => {
+            let Some(provider) = args.get(2).map(|arg| normalize_provider(&arg.to_string_lossy()))
+            else {
+                return AuthOutcome::usage(
+                    "Provider is required. Example: `hermes auth status spotify`.\n",
+                );
+            };
+            if args.len() > 3 {
+                return AuthOutcome::usage("usage: hermes auth status <provider>\n");
+            }
+            render_auth_status(hermes_home, &provider)
         }
         Some(action) => AuthOutcome::fallback(format!(
             "HERMES_RUNTIME=rust selected, but auth action {action:?} is not Rust-owned yet. Use HERMES_RUNTIME=python for the rollout fallback.\n"
@@ -563,6 +575,321 @@ fn reset_auth_statuses(hermes_home: &Path, provider: &str) -> AuthOutcome {
     }
 
     AuthOutcome::ok(format!("Reset status on {count} {provider} credentials\n"))
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+struct AuthStatus {
+    logged_in: bool,
+    error: Option<String>,
+    details: Vec<(&'static str, String)>,
+}
+
+fn render_auth_status(hermes_home: &Path, provider: &str) -> AuthOutcome {
+    let root = read_auth_root(&hermes_home.join("auth.json"));
+    let env_file = read_env_values(&hermes_home.join(".env"));
+    let status = resolve_auth_status(provider, &root, &env_file);
+    if !status.logged_in {
+        let reason = status
+            .error
+            .filter(|reason| !reason.trim().is_empty())
+            .map(|reason| format!(" ({reason})"))
+            .unwrap_or_default();
+        return AuthOutcome::ok(format!("{provider}: logged out{reason}\n"));
+    }
+
+    let mut output = format!("{provider}: logged in\n");
+    for key in [
+        "auth_type",
+        "client_id",
+        "redirect_uri",
+        "scope",
+        "expires_at",
+        "api_base_url",
+    ] {
+        if let Some((_, value)) = status
+            .details
+            .iter()
+            .find(|(candidate, _)| *candidate == key)
+            .filter(|(_, value)| !value.trim().is_empty())
+        {
+            output.push_str(&format!("  {key}: {value}\n"));
+        }
+    }
+    AuthOutcome::ok(output)
+}
+
+fn resolve_auth_status(
+    provider: &str,
+    root: &Value,
+    env_file: &serde_json::Map<String, Value>,
+) -> AuthStatus {
+    if provider == "spotify" {
+        return spotify_auth_status(root);
+    }
+    if provider == "copilot-acp" {
+        return external_process_auth_status(env_file);
+    }
+    if provider == "bedrock" {
+        return AuthStatus {
+            logged_in: env::var_os("AWS_ACCESS_KEY_ID").is_some()
+                || env::var_os("AWS_PROFILE").is_some()
+                || env_value("AWS_ACCESS_KEY_ID", env_file).is_some()
+                || env_value("AWS_PROFILE", env_file).is_some(),
+            error: None,
+            details: Vec::new(),
+        };
+    }
+    if let Some(env_vars) = api_key_env_vars(provider) {
+        return AuthStatus {
+            logged_in: env_vars
+                .iter()
+                .any(|env_var| has_usable_secret(env_value(env_var, env_file).as_deref()))
+                || credential_pool_has_secret(root, provider),
+            error: None,
+            details: Vec::new(),
+        };
+    }
+
+    let state_backed_oauth = matches!(
+        provider,
+        "nous" | "openai-codex" | "qwen-oauth" | "google-gemini-cli" | "minimax-oauth"
+    );
+    let state_logged_in = state_backed_oauth
+        && provider_state(root, provider)
+            .is_some_and(|state| state_has_runtime_secret(state) || state_has_refresh_token(state));
+    let pool_logged_in = state_backed_oauth && credential_pool_has_secret(root, provider);
+    AuthStatus {
+        logged_in: state_logged_in || pool_logged_in,
+        error: None,
+        details: Vec::new(),
+    }
+}
+
+fn spotify_auth_status(root: &Value) -> AuthStatus {
+    let Some(state) = provider_state(root, "spotify") else {
+        return AuthStatus::default();
+    };
+    let expires_at = state
+        .get("expires_at")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let refresh_token = state
+        .get("refresh_token")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let logged_in = has_usable_secret(Some(refresh_token)) || !is_expiring(expires_at);
+    let mut details = Vec::new();
+    details.push((
+        "auth_type",
+        state
+            .get("auth_type")
+            .and_then(Value::as_str)
+            .unwrap_or("oauth_pkce")
+            .to_string(),
+    ));
+    for (key, state_key) in [
+        ("client_id", "client_id"),
+        ("redirect_uri", "redirect_uri"),
+        ("scope", "granted_scope"),
+        ("expires_at", "expires_at"),
+        ("api_base_url", "api_base_url"),
+    ] {
+        let value = if key == "scope" {
+            state
+                .get(state_key)
+                .and_then(Value::as_str)
+                .or_else(|| state.get("scope").and_then(Value::as_str))
+        } else {
+            state.get(state_key).and_then(Value::as_str)
+        };
+        if let Some(value) = value.filter(|value| !value.trim().is_empty()) {
+            details.push((key, value.to_string()));
+        }
+    }
+    AuthStatus {
+        logged_in,
+        error: None,
+        details,
+    }
+}
+
+fn external_process_auth_status(env_file: &serde_json::Map<String, Value>) -> AuthStatus {
+    let command = env_value("HERMES_COPILOT_ACP_COMMAND", env_file)
+        .or_else(|| env_value("COPILOT_CLI_PATH", env_file))
+        .unwrap_or_else(|| "copilot".to_string());
+    let base_url =
+        env_value("COPILOT_ACP_BASE_URL", env_file).unwrap_or_else(|| "acp://copilot".to_string());
+    AuthStatus {
+        logged_in: command_exists(&command) || base_url.starts_with("acp+tcp://"),
+        error: None,
+        details: Vec::new(),
+    }
+}
+
+fn provider_state<'a>(root: &'a Value, provider: &str) -> Option<&'a Value> {
+    root.get("providers")
+        .and_then(Value::as_object)
+        .and_then(|providers| providers.get(provider))
+        .filter(|value| value.is_object())
+}
+
+fn state_has_runtime_secret(state: &Value) -> bool {
+    ["access_token", "api_key", "agent_key", "runtime_api_key"]
+        .iter()
+        .any(|key| {
+            state
+                .get(*key)
+                .and_then(Value::as_str)
+                .is_some_and(|value| has_usable_secret(Some(value)))
+        })
+}
+
+fn state_has_refresh_token(state: &Value) -> bool {
+    state
+        .get("refresh_token")
+        .and_then(Value::as_str)
+        .is_some_and(|value| has_usable_secret(Some(value)))
+}
+
+fn credential_pool_has_secret(root: &Value, provider: &str) -> bool {
+    root.get("credential_pool")
+        .and_then(Value::as_object)
+        .and_then(|pool| pool.get(provider))
+        .and_then(Value::as_array)
+        .is_some_and(|entries| {
+            entries.iter().any(|entry| {
+                ["access_token", "api_key", "agent_key", "runtime_api_key"]
+                    .iter()
+                    .any(|key| {
+                        entry
+                            .get(*key)
+                            .and_then(Value::as_str)
+                            .is_some_and(|value| has_usable_secret(Some(value)))
+                    })
+            })
+        })
+}
+
+fn read_env_values(path: &Path) -> serde_json::Map<String, Value> {
+    let mut values = serde_json::Map::new();
+    let Ok(raw) = fs::read_to_string(path) else {
+        return values;
+    };
+    for line in raw.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        let Some((key, value)) = trimmed.split_once('=') else {
+            continue;
+        };
+        values.insert(
+            key.trim().to_string(),
+            Value::String(unquote_env_value(value.trim())),
+        );
+    }
+    values
+}
+
+fn unquote_env_value(value: &str) -> String {
+    if value.len() >= 2
+        && ((value.starts_with('"') && value.ends_with('"'))
+            || (value.starts_with('\'') && value.ends_with('\'')))
+    {
+        value[1..value.len() - 1].to_string()
+    } else {
+        value.to_string()
+    }
+}
+
+fn env_value(key: &str, env_file: &serde_json::Map<String, Value>) -> Option<String> {
+    env::var(key).ok().or_else(|| {
+        env_file
+            .get(key)
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    })
+}
+
+fn has_usable_secret(value: Option<&str>) -> bool {
+    let Some(cleaned) = value.map(str::trim).filter(|value| value.len() >= 4) else {
+        return false;
+    };
+    !matches!(
+        cleaned.to_ascii_lowercase().as_str(),
+        "*" | "**"
+            | "***"
+            | "changeme"
+            | "your_api_key"
+            | "your-api-key"
+            | "placeholder"
+            | "example"
+            | "dummy"
+            | "null"
+            | "none"
+    )
+}
+
+fn is_expiring(expires_at: &str) -> bool {
+    if expires_at.trim().is_empty() {
+        return true;
+    }
+    DateTime::parse_from_rfc3339(expires_at)
+        .map(|dt| dt.timestamp() <= Utc::now().timestamp())
+        .unwrap_or(true)
+}
+
+fn command_exists(command: &str) -> bool {
+    let command = command.trim();
+    if command.is_empty() {
+        return false;
+    }
+    let command_path = Path::new(command);
+    if command_path.components().count() > 1 {
+        return command_path.exists();
+    }
+    env::var_os("PATH").is_some_and(|paths| {
+        env::split_paths(&paths).any(|dir| {
+            let candidate = dir.join(command);
+            candidate.is_file()
+        })
+    })
+}
+
+fn api_key_env_vars(provider: &str) -> Option<&'static [&'static str]> {
+    match provider {
+        "lmstudio" => Some(&["LM_API_KEY"]),
+        "copilot" => Some(&["COPILOT_GITHUB_TOKEN", "GH_TOKEN", "GITHUB_TOKEN"]),
+        "gemini" => Some(&["GOOGLE_API_KEY", "GEMINI_API_KEY"]),
+        "zai" => Some(&["GLM_API_KEY", "ZAI_API_KEY", "Z_AI_API_KEY"]),
+        "kimi-coding" => Some(&["KIMI_API_KEY", "KIMI_CODING_API_KEY"]),
+        "kimi-coding-cn" => Some(&["KIMI_CN_API_KEY"]),
+        "stepfun" => Some(&["STEPFUN_API_KEY"]),
+        "arcee" => Some(&["ARCEEAI_API_KEY"]),
+        "gmi" => Some(&["GMI_API_KEY"]),
+        "minimax" => Some(&["MINIMAX_API_KEY"]),
+        "anthropic" => Some(&[
+            "ANTHROPIC_API_KEY",
+            "ANTHROPIC_TOKEN",
+            "CLAUDE_CODE_OAUTH_TOKEN",
+        ]),
+        "alibaba" => Some(&["DASHSCOPE_API_KEY"]),
+        "alibaba-coding-plan" => Some(&["ALIBABA_CODING_PLAN_API_KEY", "DASHSCOPE_API_KEY"]),
+        "minimax-cn" => Some(&["MINIMAX_CN_API_KEY"]),
+        "deepseek" => Some(&["DEEPSEEK_API_KEY"]),
+        "xai" => Some(&["XAI_API_KEY"]),
+        "nvidia" => Some(&["NVIDIA_API_KEY"]),
+        "ai-gateway" => Some(&["AI_GATEWAY_API_KEY"]),
+        "opencode-zen" => Some(&["OPENCODE_ZEN_API_KEY"]),
+        "opencode-go" => Some(&["OPENCODE_GO_API_KEY"]),
+        "kilocode" => Some(&["KILOCODE_API_KEY"]),
+        "huggingface" => Some(&["HF_TOKEN"]),
+        "xiaomi" => Some(&["XIAOMI_API_KEY"]),
+        "tencent-tokenhub" => Some(&["TOKENHUB_API_KEY"]),
+        "ollama-cloud" => Some(&["OLLAMA_API_KEY"]),
+        "azure-foundry" => Some(&["AZURE_FOUNDRY_API_KEY"]),
+        _ => None,
+    }
 }
 
 fn render_auth_list(hermes_home: &Path, provider_filter: Option<&str>) -> String {

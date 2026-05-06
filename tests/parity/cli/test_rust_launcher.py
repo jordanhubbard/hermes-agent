@@ -8,6 +8,7 @@ import shutil
 import stat
 import subprocess
 import sys
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -215,6 +216,78 @@ def test_rust_runtime_auth_reset_matches_python(tmp_path: Path) -> None:
     ]:
         assert rust_entry[key] is None
         assert python_entry[key] is None
+
+
+def test_rust_runtime_auth_status_matches_python_api_key(tmp_path: Path) -> None:
+    rust_home = tmp_path / "rust-home"
+    python_home = tmp_path / "python-home"
+    for home in (rust_home, python_home):
+        home.mkdir()
+        (home / ".env").write_text("MINIMAX_API_KEY=mm-test-key\n")
+
+    rust = _run_launcher(
+        "auth",
+        "status",
+        "minimax",
+        env={"HERMES_HOME": str(rust_home), "HERMES_RUNTIME": "rust"},
+    )
+    python = _run_python_cli("auth", "status", "minimax", env={"HERMES_HOME": str(python_home)})
+
+    assert rust.returncode == 0, rust.stderr
+    assert python.returncode == 0, python.stderr
+    assert rust.stdout == python.stdout
+    assert rust.stderr == python.stderr == ""
+
+
+def test_rust_runtime_auth_status_matches_python_spotify(tmp_path: Path) -> None:
+    rust_home = tmp_path / "rust-home"
+    python_home = tmp_path / "python-home"
+    payload = {
+        "providers": {
+            "spotify": {
+                "auth_type": "oauth_pkce",
+                "client_id": "spotify-client",
+                "redirect_uri": "http://127.0.0.1:43827/spotify/callback",
+                "granted_scope": "user-library-read playlist-read-private",
+                "expires_at": "2099-01-01T00:00:00+00:00",
+                "refresh_token": "refresh-token",
+                "api_base_url": "https://api.spotify.com/v1",
+            }
+        }
+    }
+    for home in (rust_home, python_home):
+        home.mkdir()
+        (home / "auth.json").write_text(json.dumps(payload))
+
+    rust = _run_launcher(
+        "auth",
+        "status",
+        "spotify",
+        env={"HERMES_HOME": str(rust_home), "HERMES_RUNTIME": "rust"},
+    )
+    python = _run_python_cli("auth", "status", "spotify", env={"HERMES_HOME": str(python_home)})
+
+    assert rust.returncode == 0, rust.stderr
+    assert python.returncode == 0, python.stderr
+    assert rust.stdout == python.stdout
+    assert rust.stderr == python.stderr == ""
+
+
+def test_rust_runtime_auth_status_matches_python_unknown_provider(tmp_path: Path) -> None:
+    hermes_home = tmp_path / "hermes-home"
+    hermes_home.mkdir()
+    (hermes_home / "auth.json").write_text(
+        json.dumps({"providers": {"unknown": {"access_token": "secret-token"}}})
+    )
+
+    env = {"HERMES_HOME": str(hermes_home)}
+    rust = _run_launcher("auth", "status", "unknown", env={**env, "HERMES_RUNTIME": "rust"})
+    python = _run_python_cli("auth", "status", "unknown", env=env)
+
+    assert rust.returncode == 0, rust.stderr
+    assert python.returncode == 0, python.stderr
+    assert rust.stdout == python.stdout
+    assert rust.stderr == python.stderr == ""
 
 
 def test_rust_runtime_auth_remove_matches_python(tmp_path: Path) -> None:
@@ -764,6 +837,33 @@ def test_rust_runtime_logs_tail_filters_match_python(tmp_path: Path) -> None:
 
     env = {"HERMES_HOME": str(hermes_home)}
     args = ("logs", "--level", "WARNING", "--session", "abc", "--component", "tools", "-n", "5")
+    rust = _run_launcher(*args, env={**env, "HERMES_RUNTIME": "rust"})
+    python = _run_python_cli(*args, env=env)
+
+    assert rust.returncode == 0, rust.stderr
+    assert python.returncode == 0, python.stderr
+    assert rust.stdout == python.stdout
+
+
+def test_rust_runtime_logs_since_matches_python(tmp_path: Path) -> None:
+    hermes_home = tmp_path / "hermes-home"
+    logs_dir = hermes_home / "logs"
+    logs_dir.mkdir(parents=True)
+    old = (datetime.now() - timedelta(hours=2)).strftime("%Y-%m-%d %H:%M:%S")
+    recent = (datetime.now() - timedelta(minutes=10)).strftime("%Y-%m-%d %H:%M:%S")
+    (logs_dir / "agent.log").write_text(
+        "\n".join(
+            [
+                f"{old} INFO run_agent: old",
+                f"{recent} INFO run_agent: recent",
+                "undated INFO run_agent: kept",
+            ]
+        )
+        + "\n"
+    )
+
+    env = {"HERMES_HOME": str(hermes_home)}
+    args = ("logs", "--since", "1h", "-n", "10")
     rust = _run_launcher(*args, env={**env, "HERMES_RUNTIME": "rust"})
     python = _run_python_cli(*args, env=env)
 
