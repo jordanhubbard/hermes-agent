@@ -1,8 +1,9 @@
 use std::fs;
 use std::path::Path;
 
+use chrono::{Local, SecondsFormat};
 use serde::Serialize;
-use serde_json::Value;
+use serde_json::{Map, Value};
 
 use crate::gateway_status::gateway_status;
 
@@ -17,6 +18,12 @@ pub struct CronStatus {
 pub struct CronList {
     pub gateway_pids: Vec<u32>,
     pub jobs: Vec<Value>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CronCommandOutcome {
+    pub output: String,
+    pub exit_code: i32,
 }
 
 pub fn cron_status(hermes_home: &Path) -> CronStatus {
@@ -159,6 +166,37 @@ pub fn render_cron_list(list: &CronList) -> String {
     output
 }
 
+pub fn run_cron_lifecycle_command(
+    args: &[std::ffi::OsString],
+    hermes_home: &Path,
+) -> CronCommandOutcome {
+    let action = args
+        .get(1)
+        .map(|arg| arg.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let Some(job_id) = args.get(2).map(|arg| arg.to_string_lossy().into_owned()) else {
+        return CronCommandOutcome {
+            output: "usage: hermes cron [pause|remove] <job_id>\n".to_string(),
+            exit_code: 2,
+        };
+    };
+    if args.len() > 3 {
+        return CronCommandOutcome {
+            output: "usage: hermes cron [pause|remove] <job_id>\n".to_string(),
+            exit_code: 2,
+        };
+    }
+
+    match action.as_str() {
+        "pause" => pause_cron_job(hermes_home, &job_id),
+        "remove" | "rm" | "delete" => remove_cron_job(hermes_home, &job_id),
+        _ => CronCommandOutcome {
+            output: "usage: hermes cron [pause|remove] <job_id>\n".to_string(),
+            exit_code: 2,
+        },
+    }
+}
+
 fn cron_jobs(hermes_home: &Path, include_disabled: bool) -> Vec<Value> {
     let path = hermes_home.join("cron").join("jobs.json");
     let Ok(raw) = fs::read_to_string(path) else {
@@ -183,11 +221,103 @@ fn cron_jobs(hermes_home: &Path, include_disabled: bool) -> Vec<Value> {
         .collect()
 }
 
+fn pause_cron_job(hermes_home: &Path, job_id: &str) -> CronCommandOutcome {
+    let action = "pause";
+    let path = hermes_home.join("cron").join("jobs.json");
+    let mut root = read_cron_jobs_root(&path);
+    let Some(jobs) = root.get_mut("jobs").and_then(Value::as_array_mut) else {
+        return missing_job_outcome(action, job_id);
+    };
+    let now = now_iso();
+    let Some(job) = jobs
+        .iter_mut()
+        .find(|job| job.get("id").and_then(Value::as_str) == Some(job_id))
+    else {
+        return missing_job_outcome(action, job_id);
+    };
+    if let Some(map) = job.as_object_mut() {
+        map.insert("enabled".to_string(), Value::Bool(false));
+        map.insert("state".to_string(), Value::String("paused".to_string()));
+        map.insert("paused_at".to_string(), Value::String(now.clone()));
+        map.insert("paused_reason".to_string(), Value::Null);
+        normalize_skill_fields_in_map(map);
+    }
+    let name = string_field(job, "name", job_id);
+    write_cron_jobs_root(&path, &mut root, &now);
+    CronCommandOutcome {
+        output: format!("Paused job: {name} ({job_id})\n"),
+        exit_code: 0,
+    }
+}
+
+fn remove_cron_job(hermes_home: &Path, job_id: &str) -> CronCommandOutcome {
+    let action = "remove";
+    let path = hermes_home.join("cron").join("jobs.json");
+    let mut root = read_cron_jobs_root(&path);
+    let Some(jobs) = root.get_mut("jobs").and_then(Value::as_array_mut) else {
+        return missing_job_outcome(action, job_id);
+    };
+    let Some(index) = jobs
+        .iter()
+        .position(|job| job.get("id").and_then(Value::as_str) == Some(job_id))
+    else {
+        return missing_job_outcome(action, job_id);
+    };
+    let job = jobs.remove(index);
+    let name = string_field(&job, "name", job_id);
+    let now = now_iso();
+    write_cron_jobs_root(&path, &mut root, &now);
+    CronCommandOutcome {
+        output: format!("Removed job: {name} ({job_id})\n"),
+        exit_code: 0,
+    }
+}
+
+fn missing_job_outcome(action: &str, job_id: &str) -> CronCommandOutcome {
+    CronCommandOutcome {
+        output: format!(
+            "Failed to {action} job: Job with ID '{job_id}' not found. Use cronjob(action='list') to inspect jobs.\n"
+        ),
+        exit_code: 0,
+    }
+}
+
+fn read_cron_jobs_root(path: &Path) -> Value {
+    fs::read_to_string(path)
+        .ok()
+        .and_then(|raw| serde_json::from_str::<Value>(&raw).ok())
+        .filter(Value::is_object)
+        .unwrap_or_else(|| Value::Object(Map::new()))
+}
+
+fn write_cron_jobs_root(path: &Path, root: &mut Value, updated_at: &str) {
+    let Some(map) = root.as_object_mut() else {
+        return;
+    };
+    map.insert(
+        "updated_at".to_string(),
+        Value::String(updated_at.to_string()),
+    );
+    if let Some(parent) = path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    if let Ok(raw) = serde_json::to_string_pretty(root) {
+        let _ = fs::write(path, raw);
+    }
+}
+
+fn now_iso() -> String {
+    Local::now().to_rfc3339_opts(SecondsFormat::Micros, false)
+}
+
 fn normalize_skill_fields(job: &mut Value) {
     let Some(map) = job.as_object_mut() else {
         return;
     };
+    normalize_skill_fields_in_map(map);
+}
 
+fn normalize_skill_fields_in_map(map: &mut Map<String, Value>) {
     let mut skills = Vec::new();
     if let Some(value) = map.get("skills").filter(|value| !value.is_null()) {
         match value {

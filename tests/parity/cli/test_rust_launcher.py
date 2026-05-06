@@ -669,6 +669,76 @@ def test_rust_runtime_cron_list_matches_python_jobs_and_all_flag(tmp_path: Path)
         assert rust.stdout == python.stdout
 
 
+def test_rust_runtime_cron_pause_remove_matches_python(tmp_path: Path) -> None:
+    def write_jobs(root: Path) -> None:
+        cron_dir = root / "cron"
+        cron_dir.mkdir(parents=True)
+        (cron_dir / "jobs.json").write_text(
+            json.dumps(
+                {
+                    "jobs": [
+                        {
+                            "id": "job-a",
+                            "name": "Alpha",
+                            "enabled": True,
+                            "state": "scheduled",
+                            "next_run_at": "2026-05-06T09:00:00+00:00",
+                            "schedule": {"kind": "interval", "value": "1h", "minutes": 60},
+                        },
+                        {
+                            "id": "job-b",
+                            "name": "Beta",
+                            "enabled": True,
+                            "state": "scheduled",
+                            "next_run_at": "2026-05-06T10:00:00+00:00",
+                            "schedule": {"kind": "interval", "value": "1h", "minutes": 60},
+                        },
+                    ]
+                }
+            )
+        )
+
+    rust_home = tmp_path / "rust-home"
+    python_home = tmp_path / "python-home"
+    write_jobs(rust_home)
+    write_jobs(python_home)
+    rust_env = {"HERMES_HOME": str(rust_home), "HERMES_RUNTIME": "rust"}
+    python_env = {"HERMES_HOME": str(python_home)}
+
+    rust = _run_launcher("cron", "pause", "job-a", env=rust_env)
+    python = _run_python_cli("cron", "pause", "job-a", env=python_env)
+
+    assert rust.returncode == 0, rust.stderr
+    assert python.returncode == 0, python.stderr
+    assert rust.stdout == python.stdout
+    rust_jobs = json.loads((rust_home / "cron" / "jobs.json").read_text())["jobs"]
+    python_jobs = json.loads((python_home / "cron" / "jobs.json").read_text())["jobs"]
+    assert rust_jobs[0]["enabled"] == python_jobs[0]["enabled"] == False
+    assert rust_jobs[0]["state"] == python_jobs[0]["state"] == "paused"
+    assert isinstance(rust_jobs[0]["paused_at"], str)
+    assert isinstance(python_jobs[0]["paused_at"], str)
+
+    rust = _run_launcher("cron", "remove", "job-b", env=rust_env)
+    python = _run_python_cli("cron", "remove", "job-b", env=python_env)
+
+    assert rust.returncode == 0, rust.stderr
+    assert python.returncode == 0, python.stderr
+    assert rust.stdout == python.stdout
+    assert [job["id"] for job in json.loads((rust_home / "cron" / "jobs.json").read_text())["jobs"]] == [
+        "job-a"
+    ]
+    assert [
+        job["id"] for job in json.loads((python_home / "cron" / "jobs.json").read_text())["jobs"]
+    ] == ["job-a"]
+
+    rust = _run_launcher("cron", "remove", "missing", env=rust_env)
+    python = _run_python_cli("cron", "remove", "missing", env=python_env)
+
+    assert rust.returncode == 0, rust.stderr
+    assert python.returncode == 0, python.stderr
+    assert rust.stdout == python.stdout
+
+
 def test_rust_runtime_plugins_list_matches_python(tmp_path: Path) -> None:
     hermes_home = tmp_path / "hermes-home"
     bundled = tmp_path / "bundled-plugins"

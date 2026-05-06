@@ -21,7 +21,8 @@ pub use gateway_status::{
     gateway_status, render_gateway_status, run_gateway_stop_command, GatewayStatus,
 };
 pub use integrations_status::{
-    cron_list, cron_status, render_cron_list, render_cron_status, CronList, CronStatus,
+    cron_list, cron_status, render_cron_list, render_cron_status, run_cron_lifecycle_command,
+    CronCommandOutcome, CronList, CronStatus,
 };
 pub use logs::{run_logs_command, LogsOutcome};
 pub use plugins::{run_plugins_command, PluginsOutcome};

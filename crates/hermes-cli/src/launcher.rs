@@ -117,6 +117,18 @@ pub fn is_rust_cron_list_request(args: &[OsString]) -> bool {
         && args.get(1).is_some_and(|arg| arg == OsStr::new("list"))
 }
 
+pub fn is_rust_cron_lifecycle_request(args: &[OsString]) -> bool {
+    args.first().is_some_and(|arg| arg == OsStr::new("cron"))
+        && matches!(
+            args.get(1).map(OsString::as_os_str),
+            Some(action)
+                if action == OsStr::new("pause")
+                    || action == OsStr::new("remove")
+                    || action == OsStr::new("rm")
+                    || action == OsStr::new("delete")
+        )
+}
+
 pub fn is_rust_logs_request(args: &[OsString]) -> bool {
     args.first().is_some_and(|arg| arg == OsStr::new("logs"))
 }
@@ -152,6 +164,7 @@ Usage:\n  hermes [--runtime-info]\n  HERMES_RUNTIME=python hermes [args...]\n  H
   HERMES_RUNTIME=rust hermes config path\n\
   HERMES_RUNTIME=rust hermes config set <key> <value>\n\
   HERMES_RUNTIME=rust hermes cron list [--all]\n\
+  HERMES_RUNTIME=rust hermes cron [pause|remove] <job_id>\n\
   HERMES_RUNTIME=rust hermes cron status\n\
   HERMES_RUNTIME=rust hermes gateway stop\n\
   HERMES_RUNTIME=rust hermes gateway status\n\
@@ -283,6 +296,11 @@ mod tests {
         assert!(is_rust_cron_list_request(&[
             OsString::from("cron"),
             OsString::from("list")
+        ]));
+        assert!(is_rust_cron_lifecycle_request(&[
+            OsString::from("cron"),
+            OsString::from("pause"),
+            OsString::from("job-a")
         ]));
         assert!(is_rust_logs_request(&[OsString::from("logs")]));
         assert!(is_rust_plugins_request(&[
