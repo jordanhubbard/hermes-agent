@@ -236,6 +236,48 @@ def test_rust_runtime_profile_delete_yes_matches_python(tmp_path: Path) -> None:
     assert not (python_root / "active_profile").exists()
 
 
+def test_rust_runtime_profile_rename_matches_python(tmp_path: Path) -> None:
+    rust_root = tmp_path / "rust-root"
+    python_root = tmp_path / "python-root"
+    rust_home = tmp_path / "rust-home"
+    python_home = tmp_path / "python-home"
+    for root in (rust_root, python_root):
+        profile_home = root / "profiles" / "coderx"
+        _write_skill(profile_home, "coder-skill")
+        (profile_home / "config.yaml").write_text("model:\n  default: gpt-rename\n")
+        (root / "active_profile").write_text("coderx\n")
+
+    cargo_home = os.environ.get("CARGO_HOME", str(Path.home() / ".cargo"))
+    rustup_home = os.environ.get("RUSTUP_HOME", str(Path.home() / ".rustup"))
+    rust_env = {
+        "HERMES_HOME": str(rust_root),
+        "HERMES_RUNTIME": "rust",
+        "HOME": str(rust_home),
+        "CARGO_HOME": cargo_home,
+        "RUSTUP_HOME": rustup_home,
+    }
+    python_env = {"HERMES_HOME": str(python_root), "HOME": str(python_home)}
+    rust = _run_launcher("profile", "rename", "coderx", "writerx", env=rust_env)
+    python = _run_python_cli("profile", "rename", "coderx", "writerx", env=python_env)
+
+    assert rust.returncode == 0, rust.stderr
+    assert python.returncode == 0, python.stderr
+    normalized_rust_stdout = (
+        rust.stdout.replace(str(rust_root), str(python_root))
+        .replace(str(rust_home), str(python_home))
+    )
+    assert normalized_rust_stdout == python.stdout
+    assert not (rust_root / "profiles" / "coderx").exists()
+    assert not (python_root / "profiles" / "coderx").exists()
+    assert (rust_root / "profiles" / "writerx").is_dir()
+    assert (python_root / "profiles" / "writerx").is_dir()
+    assert (rust_root / "active_profile").read_text() == "writerx\n"
+    assert (python_root / "active_profile").read_text() == "writerx\n"
+    assert (rust_home / ".local" / "bin" / "writerx").read_text() == (
+        python_home / ".local" / "bin" / "writerx"
+    ).read_text()
+
+
 def test_rust_runtime_gateway_status_matches_python_not_running(tmp_path: Path) -> None:
     hermes_home = tmp_path / "hermes-home"
     hermes_home.mkdir()

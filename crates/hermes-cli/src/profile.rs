@@ -2,6 +2,7 @@ use std::env;
 use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::path::{Component, Path, PathBuf};
+use std::process::Command;
 
 use hermes_config::{path_semantics, PathSemantics};
 use serde::Serialize;
@@ -369,6 +370,66 @@ pub fn delete_profile_yes(context: &RustProfileContext, name: &str) -> Result<St
     Ok(output)
 }
 
+pub fn rename_profile(
+    context: &RustProfileContext,
+    old_name: &str,
+    new_name: &str,
+) -> Result<String, String> {
+    let old_canon = normalize_profile_name(old_name)?;
+    let new_canon = normalize_profile_name(new_name)?;
+    if old_canon == "default" {
+        return Err("Cannot rename the default profile.".to_string());
+    }
+    if new_canon == "default" {
+        return Err("Cannot rename to 'default' — it is reserved.".to_string());
+    }
+
+    let default_root = PathBuf::from(&context.paths.default_hermes_root);
+    let profiles_root = PathBuf::from(&context.paths.profiles_root);
+    let old_dir = profile_dir(&default_root, &profiles_root, &old_canon);
+    let new_dir = profile_dir(&default_root, &profiles_root, &new_canon);
+    if !old_dir.is_dir() {
+        return Err(format!("Profile '{old_canon}' does not exist."));
+    }
+    if new_dir.exists() {
+        return Err(format!("Profile '{new_canon}' already exists."));
+    }
+    if old_dir.join("gateway.pid").exists() || old_dir.join("gateway.lock").exists() {
+        return Err(
+            "renaming a profile with a possible running gateway is not Rust-owned yet".to_string(),
+        );
+    }
+
+    fs::rename(&old_dir, &new_dir)
+        .map_err(|err| format!("Could not rename {}: {err}", old_dir.display()))?;
+
+    let mut output = String::new();
+    output.push_str(&format!("✓ Renamed {old_canon} → {new_canon}\n"));
+
+    if let Some(old_alias) = alias_path_for_name(&old_canon) {
+        remove_wrapper_script(&old_alias);
+    }
+    if let Some(collision) = check_alias_collision(&new_canon) {
+        output.push_str(&format!(
+            "⚠ Cannot create alias '{new_canon}' — {collision}\n"
+        ));
+    } else if create_wrapper_script(&new_canon).is_some() {
+        output.push_str(&format!("✓ Alias updated: {new_canon}\n"));
+    }
+
+    let active_profile_path = PathBuf::from(&context.paths.active_profile_path);
+    if read_sticky_active_profile(&active_profile_path)?.as_deref() == Some(old_canon.as_str()) {
+        write_active_profile(&active_profile_path, &new_canon)?;
+        output.push_str(&format!("✓ Active profile updated: {new_canon}\n"));
+    }
+
+    output.push_str(&format!(
+        "\nProfile renamed: {old_name} → {new_name}\nPath: {}\n\n",
+        new_dir.display()
+    ));
+    Ok(output)
+}
+
 fn profile_info(name: &str, path: &Path, is_default: bool) -> ProfileInfo {
     let (model, provider) = read_config_model(path);
     let alias_path = if is_default {
@@ -594,8 +655,15 @@ fn alias_path_for(profile: &str) -> Option<String> {
     if profile == "default" || profile == "custom" {
         return None;
     }
-    let path = home_dir().join(".local").join("bin").join(profile);
+    let path = alias_path_for_name(profile)?;
     path.exists().then(|| path.to_string_lossy().to_string())
+}
+
+fn alias_path_for_name(profile: &str) -> Option<PathBuf> {
+    if profile == "default" || profile == "custom" {
+        return None;
+    }
+    Some(home_dir().join(".local").join("bin").join(profile))
 }
 
 fn remove_wrapper_script(path: &Path) -> bool {
@@ -606,6 +674,98 @@ fn remove_wrapper_script(path: &Path) -> bool {
         return false;
     }
     fs::remove_file(path).is_ok()
+}
+
+fn write_active_profile(path: &Path, profile: &str) -> Result<(), String> {
+    fs::create_dir_all(path.parent().unwrap_or(Path::new(".")))
+        .map_err(|err| format!("could not create profile root: {err}"))?;
+    let tmp = path.with_extension("tmp");
+    fs::write(&tmp, format!("{profile}\n"))
+        .map_err(|err| format!("could not write active profile: {err}"))?;
+    fs::rename(&tmp, path).map_err(|err| format!("could not replace active profile: {err}"))
+}
+
+fn create_wrapper_script(profile: &str) -> Option<PathBuf> {
+    let path = alias_path_for_name(profile)?;
+    if fs::create_dir_all(path.parent()?).is_err() {
+        return None;
+    }
+    if fs::write(
+        &path,
+        format!("#!/bin/sh\nexec hermes -p {profile} \"$@\"\n"),
+    )
+    .is_err()
+    {
+        return None;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Ok(metadata) = fs::metadata(&path) {
+            let mut permissions = metadata.permissions();
+            permissions.set_mode(permissions.mode() | 0o111);
+            let _ = fs::set_permissions(&path, permissions);
+        }
+    }
+    Some(path)
+}
+
+fn check_alias_collision(name: &str) -> Option<String> {
+    const RESERVED_NAMES: &[&str] = &["hermes", "default", "test", "tmp", "root", "sudo"];
+    const HERMES_SUBCOMMANDS: &[&str] = &[
+        "chat",
+        "model",
+        "gateway",
+        "setup",
+        "whatsapp",
+        "login",
+        "logout",
+        "status",
+        "cron",
+        "doctor",
+        "dump",
+        "config",
+        "pairing",
+        "skills",
+        "tools",
+        "mcp",
+        "sessions",
+        "insights",
+        "version",
+        "update",
+        "uninstall",
+        "profile",
+        "plugins",
+        "honcho",
+        "acp",
+    ];
+
+    if RESERVED_NAMES.contains(&name) {
+        return Some(format!("'{name}' is a reserved name"));
+    }
+    if HERMES_SUBCOMMANDS.contains(&name) {
+        return Some(format!("'{name}' conflicts with a hermes subcommand"));
+    }
+
+    let wrapper_path = alias_path_for_name(name)?;
+    let Ok(result) = Command::new("which").arg(name).output() else {
+        return None;
+    };
+    if !result.status.success() {
+        return None;
+    }
+    let existing_path = String::from_utf8_lossy(&result.stdout).trim().to_string();
+    if existing_path == wrapper_path.to_string_lossy() {
+        if fs::read_to_string(&wrapper_path)
+            .map(|content| content.contains("hermes -p"))
+            .unwrap_or(false)
+        {
+            return None;
+        }
+    }
+    Some(format!(
+        "'{name}' conflicts with an existing command ({existing_path})"
+    ))
 }
 
 #[cfg(test)]

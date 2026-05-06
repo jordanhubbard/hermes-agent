@@ -18,8 +18,8 @@ use hermes_cli::launcher::{
 };
 use hermes_cli::{
     cron_list, cron_status, delete_profile_yes, gateway_status, list_profiles, profile_status,
-    render_cron_list, render_cron_status, render_gateway_status, render_profile_list,
-    render_profile_show, render_profile_status, resolve_rust_profile_context,
+    rename_profile, render_cron_list, render_cron_status, render_gateway_status,
+    render_profile_list, render_profile_show, render_profile_status, resolve_rust_profile_context,
     run_config_set_command, run_gateway_stop_command, run_logs_command, run_plugins_command,
     run_skills_command, set_active_profile, show_profile, RustProfileContext,
 };
@@ -245,6 +245,30 @@ fn run_profile_command(context: &RustProfileContext, args: &[OsString]) -> i32 {
                 return 78;
             }
             match delete_profile_yes(context, &name) {
+                Ok(message) => {
+                    print!("{message}");
+                    0
+                }
+                Err(message) => {
+                    println!("Error: {message}");
+                    1
+                }
+            }
+        }
+        Some("rename") => {
+            let Some(old_name) = args.get(2).map(|arg| arg.to_string_lossy().into_owned()) else {
+                eprintln!("usage: hermes profile rename <old_name> <new_name>");
+                return 2;
+            };
+            let Some(new_name) = args.get(3).map(|arg| arg.to_string_lossy().into_owned()) else {
+                eprintln!("usage: hermes profile rename <old_name> <new_name>");
+                return 2;
+            };
+            if args.len() > 4 {
+                eprintln!("usage: hermes profile rename <old_name> <new_name>");
+                return 2;
+            }
+            match rename_profile(context, &old_name, &new_name) {
                 Ok(message) => {
                     print!("{message}");
                     0
