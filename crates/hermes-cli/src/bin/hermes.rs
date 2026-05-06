@@ -9,19 +9,21 @@ use hermes_agent_core::{
     ToolResult,
 };
 use hermes_cli::launcher::{
-    is_runtime_info_request, is_rust_agent_runtime_smoke_request, is_rust_config_path_request,
-    is_rust_config_set_request, is_rust_cron_lifecycle_request, is_rust_cron_list_request,
-    is_rust_cron_status_request, is_rust_gateway_status_request, is_rust_gateway_stop_request,
-    is_rust_help_request, is_rust_logs_request, is_rust_plugins_request, is_rust_profile_request,
-    is_rust_skills_request, is_rust_version_request, python_command, render_rust_help,
-    render_rust_version, runtime_info, select_runtime, RuntimeSelection,
+    is_runtime_info_request, is_rust_agent_runtime_smoke_request, is_rust_auth_request,
+    is_rust_config_path_request, is_rust_config_set_request, is_rust_cron_lifecycle_request,
+    is_rust_cron_list_request, is_rust_cron_status_request, is_rust_gateway_status_request,
+    is_rust_gateway_stop_request, is_rust_help_request, is_rust_logs_request,
+    is_rust_plugins_request, is_rust_profile_request, is_rust_skills_request,
+    is_rust_version_request, python_command, render_rust_help, render_rust_version, runtime_info,
+    select_runtime, RuntimeSelection,
 };
 use hermes_cli::{
     alias_profile, cron_list, cron_status, delete_profile_yes, gateway_status, list_profiles,
     profile_status, rename_profile, render_cron_list, render_cron_status, render_gateway_status,
     render_profile_list, render_profile_show, render_profile_status, resolve_rust_profile_context,
-    run_config_set_command, run_cron_lifecycle_command, run_gateway_stop_command, run_logs_command,
-    run_plugins_command, run_skills_command, set_active_profile, show_profile, RustProfileContext,
+    run_auth_command, run_config_set_command, run_cron_lifecycle_command, run_gateway_stop_command,
+    run_logs_command, run_plugins_command, run_skills_command, set_active_profile, show_profile,
+    RustProfileContext,
 };
 use serde_json::json;
 use std::collections::VecDeque;
@@ -93,6 +95,12 @@ fn run_rust(args: &[OsString]) -> i32 {
 
     if is_rust_agent_runtime_smoke_request(args) {
         return run_agent_runtime_smoke();
+    }
+
+    if is_rust_auth_request(args) {
+        let outcome = run_auth_command(args, &profile_context.hermes_home);
+        print!("{}", outcome.output);
+        return outcome.exit_code;
     }
 
     if is_rust_config_path_request(args) {

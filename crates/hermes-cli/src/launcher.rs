@@ -106,6 +106,11 @@ pub fn is_rust_config_set_request(args: &[OsString]) -> bool {
         && args.get(1).is_some_and(|arg| arg == OsStr::new("set"))
 }
 
+pub fn is_rust_auth_request(args: &[OsString]) -> bool {
+    args.first().is_some_and(|arg| arg == OsStr::new("auth"))
+        && args.get(1).is_some_and(|arg| arg == OsStr::new("list"))
+}
+
 pub fn is_rust_cron_status_request(args: &[OsString]) -> bool {
     args.len() == 2
         && args.first().is_some_and(|arg| arg == OsStr::new("cron"))
@@ -164,6 +169,7 @@ pub fn is_rust_profile_request(args: &[OsString]) -> bool {
 pub fn render_rust_help() -> &'static str {
     "Hermes Agent Rust launcher\n\n\
 Usage:\n  hermes [--runtime-info]\n  HERMES_RUNTIME=python hermes [args...]\n  HERMES_RUNTIME=rust hermes version\n  HERMES_RUNTIME=rust hermes agent-runtime-smoke\n\
+  HERMES_RUNTIME=rust hermes auth list [provider]\n\
   HERMES_RUNTIME=rust hermes config path\n\
   HERMES_RUNTIME=rust hermes config set <key> <value>\n\
   HERMES_RUNTIME=rust hermes cron list [--all]\n\
@@ -270,6 +276,11 @@ mod tests {
         assert!(is_rust_agent_runtime_smoke_request(&[OsString::from(
             "agent-runtime-smoke"
         )]));
+        assert!(is_rust_auth_request(&[
+            OsString::from("auth"),
+            OsString::from("list"),
+            OsString::from("openrouter")
+        ]));
         assert!(is_rust_gateway_status_request(&[
             OsString::from("gateway"),
             OsString::from("status")

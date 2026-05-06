@@ -116,6 +116,51 @@ def test_rust_runtime_has_native_agent_runtime_smoke_command() -> None:
     }
 
 
+def test_rust_runtime_auth_list_matches_python_provider_filter(tmp_path: Path) -> None:
+    rust_home = tmp_path / "rust-home"
+    python_home = tmp_path / "python-home"
+    payload = {
+        "credential_pool": {
+            "openrouter": [
+                {
+                    "id": "a1",
+                    "label": "primary",
+                    "auth_type": "api-key",
+                    "priority": 0,
+                    "source": "manual",
+                    "access_token": "secret",
+                },
+                {
+                    "id": "b2",
+                    "label": "backup-long-label",
+                    "auth_type": "oauth",
+                    "priority": 1,
+                    "source": "manual:device_code",
+                    "access_token": "secret",
+                    "last_status": "exhausted",
+                    "last_error_code": 401,
+                    "last_error_reason": "invalid_token",
+                },
+            ]
+        }
+    }
+    for home in (rust_home, python_home):
+        home.mkdir()
+        (home / "auth.json").write_text(json.dumps(payload))
+
+    rust = _run_launcher(
+        "auth",
+        "list",
+        "openrouter",
+        env={"HERMES_HOME": str(rust_home), "HERMES_RUNTIME": "rust"},
+    )
+    python = _run_python_cli("auth", "list", "openrouter", env={"HERMES_HOME": str(python_home)})
+
+    assert rust.returncode == 0, rust.stderr
+    assert python.returncode == 0, python.stderr
+    assert rust.stdout == python.stdout
+
+
 def test_rust_runtime_profile_status_matches_python_clean_profile(tmp_path: Path) -> None:
     hermes_home = tmp_path / "hermes-home"
     skill_dir = hermes_home / "skills" / "custom" / "alpha"
