@@ -430,6 +430,50 @@ pub fn rename_profile(
     Ok(output)
 }
 
+pub fn alias_profile(
+    context: &RustProfileContext,
+    profile_name: &str,
+    alias_name: Option<&str>,
+    remove: bool,
+) -> Result<String, String> {
+    let profile = normalize_profile_name(profile_name)?;
+    if profile != "default" {
+        let default_root = PathBuf::from(&context.paths.default_hermes_root);
+        let profiles_root = PathBuf::from(&context.paths.profiles_root);
+        let path = profile_dir(&default_root, &profiles_root, &profile);
+        if !path.is_dir() {
+            return Err(format!("Profile '{profile}' does not exist."));
+        }
+    }
+
+    let alias = normalize_profile_name(alias_name.unwrap_or(&profile))?;
+    if remove {
+        if let Some(path) = alias_path_for_name(&alias) {
+            if remove_wrapper_script(&path) {
+                return Ok(format!("✓ Removed alias '{alias}'\n"));
+            }
+        }
+        return Ok(format!("No alias '{alias}' found to remove.\n"));
+    }
+
+    if let Some(collision) = check_alias_collision(&alias) {
+        return Err(collision);
+    }
+    let Some(wrapper_path) = create_wrapper_script_for(&alias, &profile) else {
+        return Ok(String::new());
+    };
+
+    let mut output = String::new();
+    output.push_str(&format!("✓ Alias created: {}\n", wrapper_path.display()));
+    if !is_wrapper_dir_in_path() {
+        output.push_str(&format!(
+            "⚠ {} is not in your PATH.\n",
+            wrapper_dir().display()
+        ));
+    }
+    Ok(output)
+}
+
 fn profile_info(name: &str, path: &Path, is_default: bool) -> ProfileInfo {
     let (model, provider) = read_config_model(path);
     let alias_path = if is_default {
@@ -663,7 +707,11 @@ fn alias_path_for_name(profile: &str) -> Option<PathBuf> {
     if profile == "default" || profile == "custom" {
         return None;
     }
-    Some(home_dir().join(".local").join("bin").join(profile))
+    Some(wrapper_dir().join(profile))
+}
+
+fn wrapper_dir() -> PathBuf {
+    home_dir().join(".local").join("bin")
 }
 
 fn remove_wrapper_script(path: &Path) -> bool {
@@ -686,28 +734,43 @@ fn write_active_profile(path: &Path, profile: &str) -> Result<(), String> {
 }
 
 fn create_wrapper_script(profile: &str) -> Option<PathBuf> {
-    let path = alias_path_for_name(profile)?;
+    create_wrapper_script_for(profile, profile)
+}
+
+fn create_wrapper_script_for(alias: &str, target_profile: &str) -> Option<PathBuf> {
+    let path = alias_path_for_name(alias)?;
     if fs::create_dir_all(path.parent()?).is_err() {
         return None;
     }
     if fs::write(
         &path,
-        format!("#!/bin/sh\nexec hermes -p {profile} \"$@\"\n"),
+        format!("#!/bin/sh\nexec hermes -p {target_profile} \"$@\"\n"),
     )
     .is_err()
     {
         return None;
     }
+    make_executable(&path);
+    Some(path)
+}
+
+fn make_executable(path: &Path) {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        if let Ok(metadata) = fs::metadata(&path) {
+        if let Ok(metadata) = fs::metadata(path) {
             let mut permissions = metadata.permissions();
             permissions.set_mode(permissions.mode() | 0o111);
-            let _ = fs::set_permissions(&path, permissions);
+            let _ = fs::set_permissions(path, permissions);
         }
     }
-    Some(path)
+}
+
+fn is_wrapper_dir_in_path() -> bool {
+    let wrapper = wrapper_dir().to_string_lossy().to_string();
+    env::var_os("PATH")
+        .map(|paths| env::split_paths(&paths).any(|path| path.to_string_lossy() == wrapper))
+        .unwrap_or(false)
 }
 
 fn check_alias_collision(name: &str) -> Option<String> {

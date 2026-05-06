@@ -17,8 +17,8 @@ use hermes_cli::launcher::{
     select_runtime, RuntimeSelection,
 };
 use hermes_cli::{
-    cron_list, cron_status, delete_profile_yes, gateway_status, list_profiles, profile_status,
-    rename_profile, render_cron_list, render_cron_status, render_gateway_status,
+    alias_profile, cron_list, cron_status, delete_profile_yes, gateway_status, list_profiles,
+    profile_status, rename_profile, render_cron_list, render_cron_status, render_gateway_status,
     render_profile_list, render_profile_show, render_profile_status, resolve_rust_profile_context,
     run_config_set_command, run_gateway_stop_command, run_logs_command, run_plugins_command,
     run_skills_command, set_active_profile, show_profile, RustProfileContext,
@@ -269,6 +269,46 @@ fn run_profile_command(context: &RustProfileContext, args: &[OsString]) -> i32 {
                 return 2;
             }
             match rename_profile(context, &old_name, &new_name) {
+                Ok(message) => {
+                    print!("{message}");
+                    0
+                }
+                Err(message) => {
+                    println!("Error: {message}");
+                    1
+                }
+            }
+        }
+        Some("alias") => {
+            let Some(name) = args.get(2).map(|arg| arg.to_string_lossy().into_owned()) else {
+                eprintln!("usage: hermes profile alias <profile_name> [--remove] [--name NAME]");
+                return 2;
+            };
+            let mut remove = false;
+            let mut alias_name = None;
+            let mut index = 3;
+            while index < args.len() {
+                let arg = &args[index];
+                if arg == OsStr::new("--remove") {
+                    remove = true;
+                    index += 1;
+                } else if arg == OsStr::new("--name") {
+                    let Some(value) = args.get(index + 1) else {
+                        eprintln!(
+                            "usage: hermes profile alias <profile_name> [--remove] [--name NAME]"
+                        );
+                        return 2;
+                    };
+                    alias_name = Some(value.to_string_lossy().into_owned());
+                    index += 2;
+                } else {
+                    eprintln!(
+                        "usage: hermes profile alias <profile_name> [--remove] [--name NAME]"
+                    );
+                    return 2;
+                }
+            }
+            match alias_profile(context, &name, alias_name.as_deref(), remove) {
                 Ok(message) => {
                     print!("{message}");
                     0

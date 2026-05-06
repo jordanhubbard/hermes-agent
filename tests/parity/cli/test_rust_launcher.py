@@ -278,6 +278,58 @@ def test_rust_runtime_profile_rename_matches_python(tmp_path: Path) -> None:
     ).read_text()
 
 
+def test_rust_runtime_profile_alias_matches_python(tmp_path: Path) -> None:
+    rust_root = tmp_path / "rust-root"
+    python_root = tmp_path / "python-root"
+    rust_home = tmp_path / "rust-home"
+    python_home = tmp_path / "python-home"
+    for root in (rust_root, python_root):
+        (root / "profiles" / "coderx").mkdir(parents=True)
+
+    cargo_home = os.environ.get("CARGO_HOME", str(Path.home() / ".cargo"))
+    rustup_home = os.environ.get("RUSTUP_HOME", str(Path.home() / ".rustup"))
+    rust_wrapper_dir = rust_home / ".local" / "bin"
+    python_wrapper_dir = python_home / ".local" / "bin"
+    rust_env = {
+        "HERMES_HOME": str(rust_root),
+        "HERMES_RUNTIME": "rust",
+        "HOME": str(rust_home),
+        "PATH": f"{rust_wrapper_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+        "CARGO_HOME": cargo_home,
+        "RUSTUP_HOME": rustup_home,
+    }
+    python_env = {
+        "HERMES_HOME": str(python_root),
+        "HOME": str(python_home),
+        "PATH": f"{python_wrapper_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+    }
+
+    rust = _run_launcher("profile", "alias", "coderx", "--name", "friendx", env=rust_env)
+    python = _run_python_cli(
+        "profile", "alias", "coderx", "--name", "friendx", env=python_env
+    )
+
+    assert rust.returncode == 0, rust.stderr
+    assert python.returncode == 0, python.stderr
+    assert rust.stdout.replace(str(rust_home), str(python_home)) == python.stdout
+    assert (rust_wrapper_dir / "friendx").read_text() == (
+        python_wrapper_dir / "friendx"
+    ).read_text()
+
+    rust = _run_launcher(
+        "profile", "alias", "coderx", "--name", "friendx", "--remove", env=rust_env
+    )
+    python = _run_python_cli(
+        "profile", "alias", "coderx", "--name", "friendx", "--remove", env=python_env
+    )
+
+    assert rust.returncode == 0, rust.stderr
+    assert python.returncode == 0, python.stderr
+    assert rust.stdout == python.stdout
+    assert not (rust_wrapper_dir / "friendx").exists()
+    assert not (python_wrapper_dir / "friendx").exists()
+
+
 def test_rust_runtime_gateway_status_matches_python_not_running(tmp_path: Path) -> None:
     hermes_home = tmp_path / "hermes-home"
     hermes_home.mkdir()
