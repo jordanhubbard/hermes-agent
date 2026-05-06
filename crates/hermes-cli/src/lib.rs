@@ -15,7 +15,7 @@ pub mod setup;
 pub mod skills;
 
 pub use auth::{run_auth_command, AuthOutcome};
-pub use config_command::{run_config_set_command, ConfigCommandOutcome};
+pub use config_command::{run_config_set_command, run_config_show_command, ConfigCommandOutcome};
 pub use display::{
     builtin_skin_surfaces, logging_plan, render_status, CliStatusInput, LoggingPlan, SkinSurface,
 };

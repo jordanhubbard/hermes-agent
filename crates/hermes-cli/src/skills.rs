@@ -269,6 +269,7 @@ fn read_disabled_skills(hermes_home: &Path) -> BTreeSet<String> {
         .unwrap_or_default();
 
     if let Some(platform) = env::var_os("HERMES_PLATFORM")
+        .or_else(|| env::var_os("HERMES_SESSION_PLATFORM"))
         .filter(|value| !value.is_empty())
         .and_then(|value| value.into_string().ok())
     {

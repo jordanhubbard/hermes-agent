@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::Path;
 
-use chrono::{Local, SecondsFormat};
+use chrono::{DateTime, Duration, Local, SecondsFormat};
 use serde::Serialize;
 use serde_json::{Map, Value};
 
@@ -176,22 +176,23 @@ pub fn run_cron_lifecycle_command(
         .unwrap_or_default();
     let Some(job_id) = args.get(2).map(|arg| arg.to_string_lossy().into_owned()) else {
         return CronCommandOutcome {
-            output: "usage: hermes cron [pause|remove] <job_id>\n".to_string(),
+            output: "usage: hermes cron [pause|resume|remove] <job_id>\n".to_string(),
             exit_code: 2,
         };
     };
     if args.len() > 3 {
         return CronCommandOutcome {
-            output: "usage: hermes cron [pause|remove] <job_id>\n".to_string(),
+            output: "usage: hermes cron [pause|resume|remove] <job_id>\n".to_string(),
             exit_code: 2,
         };
     }
 
     match action.as_str() {
         "pause" => pause_cron_job(hermes_home, &job_id),
+        "resume" => resume_cron_job(hermes_home, &job_id),
         "remove" | "rm" | "delete" => remove_cron_job(hermes_home, &job_id),
         _ => CronCommandOutcome {
-            output: "usage: hermes cron [pause|remove] <job_id>\n".to_string(),
+            output: "usage: hermes cron [pause|resume|remove] <job_id>\n".to_string(),
             exit_code: 2,
         },
     }
@@ -246,6 +247,49 @@ fn pause_cron_job(hermes_home: &Path, job_id: &str) -> CronCommandOutcome {
     write_cron_jobs_root(&path, &mut root, &now);
     CronCommandOutcome {
         output: format!("Paused job: {name} ({job_id})\n"),
+        exit_code: 0,
+    }
+}
+
+fn resume_cron_job(hermes_home: &Path, job_id: &str) -> CronCommandOutcome {
+    let action = "resume";
+    let path = hermes_home.join("cron").join("jobs.json");
+    let mut root = read_cron_jobs_root(&path);
+    let Some(jobs) = root.get_mut("jobs").and_then(Value::as_array_mut) else {
+        return missing_job_outcome(action, job_id);
+    };
+    let now = now_iso();
+    let Some(job) = jobs
+        .iter_mut()
+        .find(|job| job.get("id").and_then(Value::as_str) == Some(job_id))
+    else {
+        return missing_job_outcome(action, job_id);
+    };
+
+    let next_run_at = compute_next_run(job.get("schedule"));
+    if let Some(map) = job.as_object_mut() {
+        map.insert("enabled".to_string(), Value::Bool(true));
+        map.insert("state".to_string(), Value::String("scheduled".to_string()));
+        map.insert("paused_at".to_string(), Value::Null);
+        map.insert("paused_reason".to_string(), Value::Null);
+        map.insert(
+            "next_run_at".to_string(),
+            next_run_at
+                .as_ref()
+                .map(|value| Value::String(value.clone()))
+                .unwrap_or(Value::Null),
+        );
+        normalize_skill_fields_in_map(map);
+    }
+    let name = string_field(job, "name", job_id);
+    write_cron_jobs_root(&path, &mut root, &now);
+
+    let mut output = format!("Resumed job: {name} ({job_id})\n");
+    if let Some(next_run_at) = next_run_at {
+        output.push_str(&format!("  Next run: {next_run_at}\n"));
+    }
+    CronCommandOutcome {
+        output,
         exit_code: 0,
     }
 }
@@ -308,6 +352,30 @@ fn write_cron_jobs_root(path: &Path, root: &mut Value, updated_at: &str) {
 
 fn now_iso() -> String {
     Local::now().to_rfc3339_opts(SecondsFormat::Micros, false)
+}
+
+fn compute_next_run(schedule: Option<&Value>) -> Option<String> {
+    let schedule = schedule?;
+    let kind = schedule.get("kind").and_then(Value::as_str)?;
+    let now = Local::now();
+    match kind {
+        "once" => {
+            let run_at = schedule.get("run_at").and_then(Value::as_str)?;
+            let run_at_dt = DateTime::parse_from_rfc3339(run_at).ok()?;
+            let grace_start = now.fixed_offset() - Duration::seconds(120);
+            if run_at_dt >= grace_start {
+                Some(run_at.to_string())
+            } else {
+                None
+            }
+        }
+        "interval" => {
+            let minutes = schedule.get("minutes").and_then(Value::as_i64)?;
+            Some((now + Duration::minutes(minutes)).to_rfc3339_opts(SecondsFormat::Micros, false))
+        }
+        "cron" => None,
+        _ => None,
+    }
 }
 
 fn normalize_skill_fields(job: &mut Value) {

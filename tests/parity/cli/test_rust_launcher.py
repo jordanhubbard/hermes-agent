@@ -217,6 +217,75 @@ def test_rust_runtime_auth_reset_matches_python(tmp_path: Path) -> None:
         assert python_entry[key] is None
 
 
+def test_rust_runtime_auth_remove_matches_python(tmp_path: Path) -> None:
+    rust_home = tmp_path / "rust-home"
+    python_home = tmp_path / "python-home"
+    payload = {
+        "credential_pool": {
+            "openrouter": [
+                {
+                    "id": "a1",
+                    "label": "primary",
+                    "auth_type": "api-key",
+                    "priority": 0,
+                    "source": "manual",
+                    "access_token": "secret",
+                },
+                {
+                    "id": "b2",
+                    "label": "backup",
+                    "auth_type": "api-key",
+                    "priority": 1,
+                    "source": "manual",
+                    "access_token": "secret",
+                },
+            ]
+        }
+    }
+    for home in (rust_home, python_home):
+        home.mkdir()
+        (home / "auth.json").write_text(json.dumps(payload))
+
+    rust = _run_launcher(
+        "auth",
+        "remove",
+        "openrouter",
+        "backup",
+        env={"HERMES_HOME": str(rust_home), "HERMES_RUNTIME": "rust"},
+    )
+    python = _run_python_cli(
+        "auth", "remove", "openrouter", "backup", env={"HERMES_HOME": str(python_home)}
+    )
+
+    assert rust.returncode == 0, rust.stderr
+    assert python.returncode == 0, python.stderr
+    assert rust.stdout == python.stdout
+    assert rust.stderr == python.stderr == ""
+    rust_store = json.loads((rust_home / "auth.json").read_text())
+    python_store = json.loads((python_home / "auth.json").read_text())
+    rust_store["updated_at"] = "normalized"
+    python_store["updated_at"] = "normalized"
+    assert rust_store == python_store
+
+    rust_missing = _run_launcher(
+        "auth",
+        "remove",
+        "openrouter",
+        "missing",
+        env={"HERMES_HOME": str(rust_home), "HERMES_RUNTIME": "rust"},
+    )
+    python_missing = _run_python_cli(
+        "auth",
+        "remove",
+        "openrouter",
+        "missing",
+        env={"HERMES_HOME": str(python_home)},
+    )
+    assert rust_missing.returncode == python_missing.returncode == 1
+    assert rust_missing.stdout == python_missing.stdout == ""
+    assert rust_missing.stderr == python_missing.stderr
+
+
 def test_rust_runtime_profile_status_matches_python_clean_profile(tmp_path: Path) -> None:
     hermes_home = tmp_path / "hermes-home"
     skill_dir = hermes_home / "skills" / "custom" / "alpha"
@@ -514,6 +583,60 @@ def test_rust_runtime_config_paths_respect_profile_flag(tmp_path: Path) -> None:
     assert rust.returncode == 0, rust.stderr
     assert python.returncode == 0, python.stderr
     assert rust.stdout == python.stdout
+
+
+def test_rust_runtime_config_show_matches_python(tmp_path: Path) -> None:
+    hermes_home = tmp_path / "hermes-home"
+    hermes_home.mkdir()
+    (hermes_home / "config.yaml").write_text(
+        "model: openrouter/test-model\n"
+        "agent:\n"
+        "  max_turns: 12\n"
+        "display:\n"
+        "  personality: mono\n"
+        "  show_reasoning: true\n"
+        "terminal:\n"
+        "  backend: local\n"
+        "  cwd: /tmp\n"
+        "  timeout: 42\n"
+        "timezone: UTC\n"
+        "compression:\n"
+        "  enabled: true\n"
+        "  threshold: 0.6\n"
+        "auxiliary:\n"
+        "  vision:\n"
+        "    provider: openai\n"
+        "    model: gpt-vision\n"
+    )
+    env = {
+        "HERMES_HOME": str(hermes_home),
+        "NO_COLOR": "1",
+        "TERM": "dumb",
+        "OPENROUTER_API_KEY": "sk-1234567890abcdef",
+        "VOICE_TOOLS_OPENAI_KEY": "",
+        "EXA_API_KEY": "",
+        "PARALLEL_API_KEY": "",
+        "FIRECRAWL_API_KEY": "",
+        "TAVILY_API_KEY": "",
+        "BROWSERBASE_API_KEY": "",
+        "BROWSER_USE_API_KEY": "",
+        "FAL_KEY": "",
+        "ANTHROPIC_API_KEY": "",
+        "TELEGRAM_BOT_TOKEN": "telegram-token",
+        "DISCORD_BOT_TOKEN": "",
+    }
+
+    rust = _run_launcher("config", "show", env={**env, "HERMES_RUNTIME": "rust"})
+    python = _run_python_cli("config", "show", env=env)
+    rust_default = _run_launcher("config", env={**env, "HERMES_RUNTIME": "rust"})
+    python_default = _run_python_cli("config", env=env)
+
+    assert rust.returncode == 0, rust.stderr
+    assert python.returncode == 0, python.stderr
+    assert rust.stdout == python.stdout
+    assert rust_default.returncode == 0, rust_default.stderr
+    assert python_default.returncode == 0, python_default.stderr
+    assert rust_default.stdout == python_default.stdout
 
 
 def test_rust_runtime_config_set_matches_python(tmp_path: Path) -> None:
@@ -819,6 +942,33 @@ def test_rust_runtime_cron_pause_remove_matches_python(tmp_path: Path) -> None:
     assert isinstance(rust_jobs[0]["paused_at"], str)
     assert isinstance(python_jobs[0]["paused_at"], str)
 
+    for root in (rust_home, python_home):
+        jobs_file = root / "cron" / "jobs.json"
+        payload = json.loads(jobs_file.read_text())
+        payload["jobs"][0]["schedule"] = {
+            "kind": "once",
+            "run_at": "2099-01-01T00:00:00+00:00",
+            "display": "once at 2099-01-01 00:00",
+        }
+        payload["jobs"][0]["next_run_at"] = None
+        jobs_file.write_text(json.dumps(payload))
+
+    rust = _run_launcher("cron", "resume", "job-a", env=rust_env)
+    python = _run_python_cli("cron", "resume", "job-a", env=python_env)
+
+    assert rust.returncode == 0, rust.stderr
+    assert python.returncode == 0, python.stderr
+    assert rust.stdout == python.stdout
+    rust_jobs = json.loads((rust_home / "cron" / "jobs.json").read_text())["jobs"]
+    python_jobs = json.loads((python_home / "cron" / "jobs.json").read_text())["jobs"]
+    assert rust_jobs[0]["enabled"] == python_jobs[0]["enabled"] == True
+    assert rust_jobs[0]["state"] == python_jobs[0]["state"] == "scheduled"
+    assert rust_jobs[0]["paused_at"] is None
+    assert python_jobs[0]["paused_at"] is None
+    assert rust_jobs[0]["paused_reason"] is None
+    assert python_jobs[0]["paused_reason"] is None
+    assert rust_jobs[0]["next_run_at"] == python_jobs[0]["next_run_at"]
+
     rust = _run_launcher("cron", "remove", "job-b", env=rust_env)
     python = _run_python_cli("cron", "remove", "job-b", env=python_env)
 
@@ -1018,7 +1168,14 @@ def test_rust_runtime_skills_list_sources_match_python(tmp_path: Path) -> None:
                 }
             )
         )
-        (home / "config.yaml").write_text("skills:\n  disabled:\n    - hub-skill\n")
+        (home / "config.yaml").write_text(
+            "skills:\n"
+            "  disabled:\n"
+            "    - hub-skill\n"
+            "  platform_disabled:\n"
+            "    telegram:\n"
+            "      - local-skill\n"
+        )
 
     rust_env = {"HERMES_HOME": str(rust_home), "HERMES_RUNTIME": "rust"}
     python_env = {"HERMES_HOME": str(python_home)}
@@ -1034,6 +1191,23 @@ def test_rust_runtime_skills_list_sources_match_python(tmp_path: Path) -> None:
         assert rust.returncode == 0, rust.stderr
         assert python.returncode == 0, python.stderr
         assert rust.stdout == python.stdout
+
+    rust = _run_launcher(
+        "skills",
+        "list",
+        "--enabled-only",
+        env={**rust_env, "HERMES_SESSION_PLATFORM": "telegram"},
+    )
+    python = _run_python_cli(
+        "skills",
+        "list",
+        "--enabled-only",
+        env={**python_env, "HERMES_SESSION_PLATFORM": "telegram"},
+    )
+
+    assert rust.returncode == 0, rust.stderr
+    assert python.returncode == 0, python.stderr
+    assert rust.stdout == python.stdout
 
 
 def test_rust_runtime_rejects_unported_commands_without_python_import() -> None:
