@@ -142,6 +142,9 @@ pub fn is_rust_plugins_request(args: &[OsString]) -> bool {
                     || action == OsStr::new("ls")
                     || action == OsStr::new("enable")
                     || action == OsStr::new("disable")
+                    || action == OsStr::new("remove")
+                    || action == OsStr::new("rm")
+                    || action == OsStr::new("uninstall")
         )
 }
 
@@ -169,7 +172,7 @@ Usage:\n  hermes [--runtime-info]\n  HERMES_RUNTIME=python hermes [args...]\n  H
   HERMES_RUNTIME=rust hermes gateway stop\n\
   HERMES_RUNTIME=rust hermes gateway status\n\
   HERMES_RUNTIME=rust hermes logs [list|agent|errors|gateway]\n\
-  HERMES_RUNTIME=rust hermes plugins [list|enable|disable]\n\
+  HERMES_RUNTIME=rust hermes plugins [list|enable|disable|remove]\n\
   HERMES_RUNTIME=rust hermes skills list\n\
   HERMES_RUNTIME=rust hermes profile\n\n\
 Runtime selection:\n  HERMES_RUNTIME=python  Run the production Python runtime through hermes_cli.main\n  HERMES_RUNTIME=rust    Run Rust-owned commands that have landed so far\n  HERMES_RUNTIME=auto    Use the rollout default\n\n\
@@ -310,6 +313,11 @@ mod tests {
         assert!(is_rust_plugins_request(&[
             OsString::from("plugins"),
             OsString::from("enable"),
+            OsString::from("disk-cleanup")
+        ]));
+        assert!(is_rust_plugins_request(&[
+            OsString::from("plugins"),
+            OsString::from("remove"),
             OsString::from("disk-cleanup")
         ]));
         assert!(is_rust_skills_request(&[

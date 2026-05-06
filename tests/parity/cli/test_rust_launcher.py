@@ -806,6 +806,51 @@ def test_rust_runtime_plugins_enable_disable_match_python(tmp_path: Path) -> Non
     assert rust_cfg["plugins"] == python_cfg["plugins"]
 
 
+def test_rust_runtime_plugins_remove_matches_python(tmp_path: Path) -> None:
+    rust_home = tmp_path / "rust-home"
+    python_home = tmp_path / "python-home"
+    for home in (rust_home, python_home):
+        plugin_dir = home / "plugins" / "user-one"
+        plugin_dir.mkdir(parents=True)
+        (plugin_dir / "plugin.yaml").write_text("name: user-one\n")
+
+    rust = _run_launcher(
+        "plugins",
+        "remove",
+        "user-one",
+        env={"HERMES_HOME": str(rust_home), "HERMES_RUNTIME": "rust", "COLUMNS": "200"},
+    )
+    python = _run_python_cli(
+        "plugins",
+        "remove",
+        "user-one",
+        env={"HERMES_HOME": str(python_home), "COLUMNS": "200"},
+    )
+
+    assert rust.returncode == 0, rust.stderr
+    assert python.returncode == 0, python.stderr
+    assert rust.stdout.replace(str(rust_home), str(python_home)) == python.stdout
+    assert not (rust_home / "plugins" / "user-one").exists()
+    assert not (python_home / "plugins" / "user-one").exists()
+
+    rust = _run_launcher(
+        "plugins",
+        "remove",
+        "missing",
+        env={"HERMES_HOME": str(rust_home), "HERMES_RUNTIME": "rust", "COLUMNS": "200"},
+    )
+    python = _run_python_cli(
+        "plugins",
+        "remove",
+        "missing",
+        env={"HERMES_HOME": str(python_home), "COLUMNS": "200"},
+    )
+
+    assert rust.returncode == 1, rust.stdout
+    assert python.returncode == 1, python.stdout
+    assert rust.stdout.replace(str(rust_home), str(python_home)) == python.stdout
+
+
 def test_rust_runtime_plugins_missing_matches_python(tmp_path: Path) -> None:
     hermes_home = tmp_path / "hermes-home"
     bundled = tmp_path / "bundled-plugins"

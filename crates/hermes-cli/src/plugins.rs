@@ -61,6 +61,15 @@ pub fn run_plugins_command(args: &[OsString], hermes_home: &Path) -> PluginsOutc
             };
             update_plugin_enabled(hermes_home, &name, false)
         }
+        Some(action) if action == "remove" || action == "rm" || action == "uninstall" => {
+            let Some(name) = args.get(2).map(|arg| arg.to_string_lossy().into_owned()) else {
+                return PluginsOutcome {
+                    output: "usage: hermes plugins remove <name>\n".to_string(),
+                    exit_code: 2,
+                };
+            };
+            remove_user_plugin(hermes_home, &name)
+        }
         Some(action) => PluginsOutcome {
             output: format!(
                 "HERMES_RUNTIME=rust selected, but plugins action {action:?} is not Rust-owned yet. Use HERMES_RUNTIME=python for the rollout fallback.\n"
@@ -72,6 +81,79 @@ pub fn run_plugins_command(args: &[OsString], hermes_home: &Path) -> PluginsOutc
             exit_code: 78,
         },
     }
+}
+
+fn remove_user_plugin(hermes_home: &Path, name: &str) -> PluginsOutcome {
+    let plugins_dir = hermes_home.join("plugins");
+    let target = match sanitize_plugin_path(&plugins_dir, name) {
+        Ok(path) => path,
+        Err(message) => {
+            return PluginsOutcome {
+                output: format!("Error: {message}\n"),
+                exit_code: 1,
+            };
+        }
+    };
+    if !target.exists() {
+        let installed = installed_plugin_dirs(&plugins_dir);
+        let installed = if installed.is_empty() {
+            "(none)".to_string()
+        } else {
+            installed.join(", ")
+        };
+        return PluginsOutcome {
+            output: format!(
+                "Error: Plugin '{name}' not found in {}.\nInstalled plugins: {installed}\n",
+                plugins_dir.display()
+            ),
+            exit_code: 1,
+        };
+    }
+    if let Err(err) = fs::remove_dir_all(&target) {
+        return PluginsOutcome {
+            output: format!("Error: {err}\n"),
+            exit_code: 1,
+        };
+    }
+    PluginsOutcome {
+        output: format!(
+            "\n✗ Plugin {name} removed from {}\n\n",
+            plugins_dir.display()
+        ),
+        exit_code: 0,
+    }
+}
+
+fn sanitize_plugin_path(plugins_dir: &Path, name: &str) -> Result<PathBuf, String> {
+    if name.is_empty() {
+        return Err("Plugin name must not be empty.".to_string());
+    }
+    if matches!(name, "." | "..") {
+        return Err(format!(
+            "Invalid plugin name '{name}': must not reference the plugins directory itself."
+        ));
+    }
+    for bad in ["/", "\\", ".."] {
+        if name.contains(bad) {
+            return Err(format!(
+                "Invalid plugin name '{name}': must not contain '{bad}'."
+            ));
+        }
+    }
+    Ok(plugins_dir.join(name))
+}
+
+fn installed_plugin_dirs(plugins_dir: &Path) -> Vec<String> {
+    let Ok(entries) = fs::read_dir(plugins_dir) else {
+        return Vec::new();
+    };
+    let mut names = entries
+        .filter_map(Result::ok)
+        .filter(|entry| entry.path().is_dir())
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+        .collect::<Vec<_>>();
+    names.sort();
+    names
 }
 
 pub fn render_plugins_list(hermes_home: &Path) -> String {
