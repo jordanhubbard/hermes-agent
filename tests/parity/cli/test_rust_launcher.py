@@ -161,6 +161,62 @@ def test_rust_runtime_auth_list_matches_python_provider_filter(tmp_path: Path) -
     assert rust.stdout == python.stdout
 
 
+def test_rust_runtime_auth_reset_matches_python(tmp_path: Path) -> None:
+    rust_home = tmp_path / "rust-home"
+    python_home = tmp_path / "python-home"
+    payload = {
+        "credential_pool": {
+            "openrouter": [
+                {
+                    "id": "a1",
+                    "label": "primary",
+                    "auth_type": "api-key",
+                    "priority": 0,
+                    "source": "manual",
+                    "access_token": "secret",
+                    "last_status": "exhausted",
+                    "last_status_at": 1,
+                    "last_error_code": 401,
+                    "last_error_reason": "invalid_token",
+                    "last_error_message": "bad",
+                    "last_error_reset_at": 2,
+                }
+            ]
+        }
+    }
+    for home in (rust_home, python_home):
+        home.mkdir()
+        (home / "auth.json").write_text(json.dumps(payload))
+
+    rust = _run_launcher(
+        "auth",
+        "reset",
+        "openrouter",
+        env={"HERMES_HOME": str(rust_home), "HERMES_RUNTIME": "rust"},
+    )
+    python = _run_python_cli("auth", "reset", "openrouter", env={"HERMES_HOME": str(python_home)})
+
+    assert rust.returncode == 0, rust.stderr
+    assert python.returncode == 0, python.stderr
+    assert rust.stdout == python.stdout
+    rust_entry = json.loads((rust_home / "auth.json").read_text())["credential_pool"][
+        "openrouter"
+    ][0]
+    python_entry = json.loads((python_home / "auth.json").read_text())["credential_pool"][
+        "openrouter"
+    ][0]
+    for key in [
+        "last_status",
+        "last_status_at",
+        "last_error_code",
+        "last_error_reason",
+        "last_error_message",
+        "last_error_reset_at",
+    ]:
+        assert rust_entry[key] is None
+        assert python_entry[key] is None
+
+
 def test_rust_runtime_profile_status_matches_python_clean_profile(tmp_path: Path) -> None:
     hermes_home = tmp_path / "hermes-home"
     skill_dir = hermes_home / "skills" / "custom" / "alpha"
